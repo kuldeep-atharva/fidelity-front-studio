@@ -7,34 +7,52 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Users, UserCheck, Clock, FileText, Search, Edit, Trash2 } from "lucide-react";
+import { supabase } from "@/utils/supabaseClient";
+import { useEffect, useState } from "react";
 
 const Admin = () => {
   const users = [
     {
-      name: "John Doe",
+      first_name: "John Doe",
       email: "john.doe@email.com",
       role: "user",
       status: "active",
-      caseNumber: "SF-2024-001234",
+      case_number: "SF-2024-001234",
       lastLogin: "15/01/2024"
     },
     {
-      name: "Jane Smith",
+      first_name: "Jane Smith",
       email: "jane.smith@email.com",
       role: "admin",
       status: "active",
-      caseNumber: "-",
+      case_number: "-",
       lastLogin: "15/01/2024"
     },
     {
-      name: "Mike Johnson",
+      first_name: "Mike Johnson",
       email: "mike.johnson@email.com",
       role: "user",
       status: "pending",
-      caseNumber: "SF-2024-001235",
+      case_number: "SF-2024-001235",
       lastLogin: "10/01/2024"
     }
   ];
+
+  const [userList, setUserList] = useState([]);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      const { data, error } = await supabase.from('incident_reports').select('*');
+      if (error) {
+        console.error("Error fetching users:", error);
+      } else {
+        console.log("Fetched users:", data);
+        setUserList(data);
+      }
+    };
+
+    fetchUsers();
+  }, [])
 
   return (
     <Layout>
@@ -132,9 +150,9 @@ const Admin = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {users.map((user, index) => (
+                    {userList.map((user, index) => (
                         <TableRow key={index}>
-                          <TableCell className="font-medium">{user.name}</TableCell>
+                          <TableCell className="font-medium">{user.first_name}</TableCell>
                           <TableCell>{user.email}</TableCell>
                           <TableCell>
                             <Badge variant={user.role === "admin" ? "default" : "secondary"}>
@@ -146,7 +164,35 @@ const Admin = () => {
                               {user.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>{user.caseNumber}</TableCell>
+                          <TableCell>{user.case_number}</TableCell>
+                          <TableCell>{user.incident_date}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button variant="ghost" size="sm">
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm">
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {users.map((user, index) => (
+                        <TableRow key={index}>
+                          <TableCell className="font-medium">{user.first_name}</TableCell>
+                          <TableCell>{user.email}</TableCell>
+                          <TableCell>
+                            <Badge variant={user.role === "admin" ? "default" : "secondary"}>
+                              {user.role}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={user.status === "active" ? "default" : "secondary"}>
+                              {user.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{user.case_number}</TableCell>
                           <TableCell>{user.lastLogin}</TableCell>
                           <TableCell>
                             <div className="flex gap-2">
