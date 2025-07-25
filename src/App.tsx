@@ -10,6 +10,7 @@ import Notifications from "./pages/Notifications";
 import Admin from "./pages/Admin";
 import Rules from "./pages/Rules";
 import NotFound from "./pages/NotFound";
+import IncidentReportForm from "./pages/IncidentReportForm";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/rules" element={<Rules />} />
+          <Route path="/step1" element={<IncidentReportForm />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
