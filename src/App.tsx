@@ -7,6 +7,8 @@ import Index from "./pages/Index";
 import Wayfinder from "./pages/Wayfinder";
 import Dashboard from "./pages/Dashboard";
 import Notifications from "./pages/Notifications";
+import Admin from "./pages/Admin";
+import Rules from "./pages/Rules";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +24,8 @@ const App = () => (
           <Route path="/wayfinder" element={<Wayfinder />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/notifications" element={<Notifications />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/rules" element={<Rules />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
