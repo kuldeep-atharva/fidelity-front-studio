@@ -1,71 +1,86 @@
-import Layout from "@/components/Layout";
-import StatsCard from "@/components/StatsCard";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Settings, Shield, Clock, Database, Search, Edit, Trash2, FileText, Bell, Lock, CheckCircle, Code } from "lucide-react";
+// Updated Rules.tsx with Edit and Pagination functionality
+
+import { useEffect, useState } from 'react';
+import Layout from '@/components/Layout';
+import StatsCard from '@/components/StatsCard';
+import {
+  Tabs, TabsContent, TabsList, TabsTrigger,
+} from '@/components/ui/tabs';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import {
+  Settings, Shield, Clock, Database, Search, Edit, Trash2, FileText, Bell, Lock, CheckCircle, Code,
+} from 'lucide-react';
+import { supabase } from '@/utils/supabaseClient';
+import RuleModal from '@/components/RuleModal';
+
+const PAGE_SIZE = 5;
 
 const Rules = () => {
-  const rules = [
-    {
-      name: "Auto-approve simple name changes",
-      description: "Automatically approve name change petitions for simple cases",
-      category: "workflow",
-      status: "active",
-      priority: "medium",
-      executions: 142,
-      lastModified: "15/01/2024",
-      modifiedBy: "admin@sfcourts.org",
-      icon: <FileText className="w-4 h-4" />
-    },
-    {
-      name: "Flag high-risk cases",
-      description: "Flag cases that meet high-risk criteria for manual review",
-      category: "security",
-      status: "active",
-      priority: "high",
-      executions: 23,
-      lastModified: "14/01/2024",
-      modifiedBy: "security@sfcourts.org",
-      icon: <Lock className="w-4 h-4" />
-    },
-    {
-      name: "Send deadline reminders",
-      description: "Send email reminders 3 days before deadline",
-      category: "notification",
-      status: "active",
-      priority: "medium",
-      executions: 89,
-      lastModified: "12/01/2024",
-      modifiedBy: "notifications@sfcourts.org",
-      icon: <Bell className="w-4 h-4" />
-    },
-    {
-      name: "Validate document completeness",
-      description: "Check if all required documents are submitted",
-      category: "validation",
-      status: "testing",
-      priority: "high",
-      executions: 5,
-      lastModified: "10/01/2024",
-      modifiedBy: "validation@sfcourts.org",
-      icon: <CheckCircle className="w-4 h-4" />
+  const [rules, setRules] = useState<any[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState('all-status');
+  const [categoryFilter, setCategoryFilter] = useState('all-categories');
+  const [search, setSearch] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editRule, setEditRule] = useState<any>(null);
+
+  const [page, setPage] = useState(1);
+
+  const fetchRules = async () => {
+    const { data, error } = await supabase
+      .from('rules')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      setRules(data);
+      const cats = Array.from(new Set(data.map((r) => r.category))).filter(Boolean);
+      setCategories(cats);
     }
-  ];
+  };
+
+  useEffect(() => {
+    fetchRules();
+  }, []);
+
+  const toggleStatus = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'active' ? 'testing' : 'active';
+    await supabase.from('rules').update({ status: newStatus }).eq('id', id);
+    fetchRules();
+  };
+
+  const deleteRule = async (id: string) => {
+    await supabase.from('rules').delete().eq('id', id);
+    fetchRules();
+  };
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
-      case "workflow": return <FileText className="w-4 h-4" />;
-      case "security": return <Lock className="w-4 h-4" />;
-      case "notification": return <Bell className="w-4 h-4" />;
-      case "validation": return <CheckCircle className="w-4 h-4" />;
+      case 'workflow': return <FileText className="w-4 h-4" />;
+      case 'security': return <Lock className="w-4 h-4" />;
+      case 'notification': return <Bell className="w-4 h-4" />;
+      case 'validation': return <CheckCircle className="w-4 h-4" />;
       default: return <Code className="w-4 h-4" />;
     }
   };
+
+  const filtered = rules.filter((r) => {
+    const matchStatus = statusFilter === 'all-status' || r.status === statusFilter;
+    const matchCategory = categoryFilter === 'all-categories' || r.category === categoryFilter;
+    const matchSearch = search === '' || r.name.toLowerCase().includes(search.toLowerCase());
+    return matchStatus && matchCategory && matchSearch;
+  });
+
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <Layout>
@@ -77,165 +92,117 @@ const Rules = () => {
         <div className="bg-card rounded-lg p-6 border">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-foreground">Rule Management System</h2>
-            <Button variant="outline" className="text-primary border-primary">
-              <Code className="w-4 h-4 mr-2" />
-              Dynamic Configuration
+            <Button onClick={() => { setEditRule(null); setModalOpen(true); }}>
+              <Code className="w-4 h-4 mr-2" /> Create Rule
             </Button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <StatsCard
-              title="Total Rules"
-              value="4"
-              icon={<Settings className="w-5 h-5" />}
-              iconBg="bg-muted-foreground"
-            />
-            <StatsCard
-              title="Active Rules"
-              value="3"
-              icon={<Shield className="w-5 h-5" />}
-              iconBg="bg-success"
-            />
-            <StatsCard
-              title="Testing"
-              value="1"
-              icon={<Clock className="w-5 h-5" />}
-              iconBg="bg-destructive"
-            />
-            <StatsCard
-              title="Configurations"
-              value="4"
-              icon={<Database className="w-5 h-5" />}
-              iconBg="bg-muted-foreground"
-            />
+            <StatsCard title="Total Rules" value={rules.length.toString()} icon={<Settings className="w-5 h-5" />} iconBg="bg-muted-foreground" />
+            <StatsCard title="Active Rules" value={rules.filter((r) => r.status === 'active').length.toString()} icon={<Shield className="w-5 h-5" />} iconBg="bg-success" />
+            <StatsCard title="Testing" value={rules.filter((r) => r.status === 'testing').length.toString()} icon={<Clock className="w-5 h-5" />} iconBg="bg-destructive" />
+            <StatsCard title="Configurations" value={rules.length.toString()} icon={<Database className="w-5 h-5" />} iconBg="bg-muted-foreground" />
           </div>
 
-          <Tabs defaultValue="business" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="business">Business Rules</TabsTrigger>
-              <TabsTrigger value="system">System Configuration</TabsTrigger>
-              <TabsTrigger value="templates">Rule Templates</TabsTrigger>
-            </TabsList>
+          <div className="flex gap-4 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Input placeholder="Search rules..." className="pl-10" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all-categories">All Categories</SelectItem>
+                {categories.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all-status">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="testing">Testing</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-            <TabsContent value="business" className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">Business Rules Engine</h3>
-                <p className="text-muted-foreground text-sm mb-6">Create and manage dynamic business rules that control application behavior</p>
+          <div className="border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Condition</TableHead>
+                  <TableHead>Signer</TableHead>
+                  <TableHead>Reviewer</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginated.map((rule) => (
+                  <TableRow key={rule.id}>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <div className="font-medium">{rule.name}</div>
+                        <div className="text-sm text-muted-foreground">{rule.description}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {getCategoryIcon(rule.category)}
+                        <span className="text-sm">{rule.category}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={rule.status === 'active' ? 'default' : 'secondary'}>{rule.status}</Badge>
+                        <Switch checked={rule.status === 'active'} onCheckedChange={() => toggleStatus(rule.id, rule.status)} />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={rule.priority === 'high' ? 'destructive' : 'outline'} className={rule.priority === 'medium' ? 'bg-primary text-primary-foreground' : ''}>{rule.priority}</Badge>
+                    </TableCell>
+                    <TableCell>{rule.condition}</TableCell>
+                    <TableCell>{rule.signer_email}</TableCell>
+                    <TableCell>{rule.reviewer_email}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => { setEditRule(rule); setModalOpen(true); }}>
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => deleteRule(rule.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
-                <div className="flex gap-4 mb-6">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                    <Input placeholder="Search rules..." className="pl-10" />
-                  </div>
-                  <Select defaultValue="all-categories">
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="All Categories" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all-categories">All Categories</SelectItem>
-                      <SelectItem value="workflow">Workflow</SelectItem>
-                      <SelectItem value="security">Security</SelectItem>
-                      <SelectItem value="notification">Notification</SelectItem>
-                      <SelectItem value="validation">Validation</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select defaultValue="all-status">
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="All Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all-status">All Status</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="testing">Testing</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="border rounded-lg">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Priority</TableHead>
-                        <TableHead>Executions</TableHead>
-                        <TableHead>Last Modified</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {rules.map((rule, index) => (
-                        <TableRow key={index}>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <div className="font-medium">{rule.name}</div>
-                              <div className="text-sm text-muted-foreground">{rule.description}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {getCategoryIcon(rule.category)}
-                              <span className="text-sm">{rule.category}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Badge variant={rule.status === "active" ? "default" : "secondary"}>
-                                {rule.status}
-                              </Badge>
-                              <Switch checked={rule.status === "active"} />
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge 
-                              variant={rule.priority === "high" ? "destructive" : "outline"}
-                              className={rule.priority === "medium" ? "bg-primary text-primary-foreground" : ""}
-                            >
-                              {rule.priority}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{rule.executions}</TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <div className="text-sm">{rule.lastModified}</div>
-                              <div className="text-xs text-muted-foreground">{rule.modifiedBy}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button variant="ghost" size="sm">
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button variant="ghost" size="sm">
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="system">
-              <div className="text-center py-12">
-                <h3 className="text-lg font-semibold mb-2">System Configuration</h3>
-                <p className="text-muted-foreground">System configuration settings coming soon.</p>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="templates">
-              <div className="text-center py-12">
-                <h3 className="text-lg font-semibold mb-2">Rule Templates</h3>
-                <p className="text-muted-foreground">Rule template library coming soon.</p>
-              </div>
-            </TabsContent>
-          </Tabs>
+          <div className="flex justify-between items-center mt-4">
+            <Button variant="ghost" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button>
+            <span>Page {page}</span>
+            <Button variant="ghost" disabled={page * PAGE_SIZE >= filtered.length} onClick={() => setPage(page + 1)}>Next</Button>
+          </div>
         </div>
       </div>
+
+      <RuleModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSuccess={fetchRules}
+        initialRule={editRule}
+      />
     </Layout>
   );
 };

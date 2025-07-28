@@ -7,15 +7,23 @@ import * as Dialog from "@radix-ui/react-dialog";
 import FinalSubmissionPdf from "./FinalSubmissionPdf";
 import axios from "axios";
 import ChatModal from "@/components/ChatModal";
+import { matchRuleUsingOpenAI } from "@/utils/ruleEngine";
+
 
 const IncidentReportForm: React.FC = () => {
   const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
+    first_name: "",
+    last_name: "",
     date_of_incident: "",
     type_of_incident: "",
     contact_phone: "",
     contact_email: "",
+    case_number: "",
+    signer_email: "", // Added for rule matching
+    reviewer_email  : "", // Added for rule matching
+    pdf_url: "", // Base64 encoded PDF
+    status: "New", // Default status
+    rule_applied  : "", // Rule ID applied
   });
 
   const [documents, setDocuments] = useState<File[]>([]);
@@ -61,22 +69,30 @@ const IncidentReportForm: React.FC = () => {
     setDocuments((prev) => prev.filter((_, index) => index !== indexToRemove));
   };
 
+  const generateCaseNumber = () => `SF-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+
   const handleFinalSubmit = async (pdfBase64: string) => {
     setSubmitting(true);
     try {
-      const { error: insertError } = await supabase.from("cases").insert([
-        {
-          case_number: `SF-2025-00${Math.floor(Math.random() * 1000)}`,
-          first_name: form.firstName,
-          last_name: form.lastName,
-          date_of_incident: form.date_of_incident,
-          type_of_incident: form.type_of_incident,
-          contact_phone: form.contact_phone,
-          contact_email: form.contact_email,
-          pdf_url: pdfBase64,
-          status: "New",
-        },
-      ]);
+      const generatedCaseNumber = generateCaseNumber();
+      ``
+      const newCase = {
+        ...form,
+        pdf_url: pdfBase64,
+        case_number: generatedCaseNumber
+      };
+
+      const { data: rules } = await supabase.from("rules").select("*");
+      const ruleMatch = await matchRuleUsingOpenAI(newCase, rules || []);
+
+      if (ruleMatch) {
+        newCase.signer_email = ruleMatch.signer_email;
+        newCase.reviewer_email = ruleMatch.reviewer_email;
+        newCase.rule_applied = ruleMatch.rule_id;
+      }
+
+      const { error: insertError } = await supabase.from("cases").insert([newCase]);
       if (insertError) throw new Error(insertError.message);
 
       //Signcare API integration (commented out for now)
@@ -160,12 +176,18 @@ const IncidentReportForm: React.FC = () => {
 
       setIsModalOpen(true);
       setForm({
-        firstName: "",
-        lastName: "",
+        first_name: "",
+        last_name: "",
         date_of_incident: "",
         type_of_incident: "",
         contact_phone: "",
         contact_email: "",
+        case_number: "",
+        signer_email: "",
+        reviewer_email  : "",
+        pdf_url: "",
+        status: "",
+        rule_applied  : "",
       });
       setDocuments([]);
     } catch (error: any) {
@@ -177,8 +199,8 @@ const IncidentReportForm: React.FC = () => {
 
   const validateStep1 = () => {
     if (
-      !form.firstName ||
-      !form.lastName ||
+      !form.first_name ||
+      !form.last_name ||
       !form.date_of_incident ||
       !form.type_of_incident ||
       !form.contact_phone ||
@@ -243,7 +265,7 @@ const IncidentReportForm: React.FC = () => {
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {["firstName", "lastName", "contact_phone", "contact_email"].map(
+              {["first_name", "last_name", "contact_phone", "contact_email"].map(
                 (field) => (
                   <div key={field}>
                     <label className="block text-sm mb-1 font-medium capitalize">
