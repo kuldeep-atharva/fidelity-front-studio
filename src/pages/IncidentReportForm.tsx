@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/utils/supabaseClient";
 import * as Dialog from "@radix-ui/react-dialog";
 import FinalSubmissionPdf from "./FinalSubmissionPdf";
+import axios from "axios";
 
 const IncidentReportForm: React.FC = () => {
   const [form, setForm] = useState({
@@ -16,7 +17,7 @@ const IncidentReportForm: React.FC = () => {
     contact_email: "",
   });
 
-  const [document, setDocument] = useState<File | null>(null);
+  const [documents, setDocuments] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
@@ -34,48 +35,125 @@ const IncidentReportForm: React.FC = () => {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setDocument(e.target.files[0]);
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      // Filter only PDF files
+      const pdfFiles = newFiles.filter(
+        (file) => file.type === "application/pdf"
+      );
+
+      if (pdfFiles.length !== newFiles.length) {
+        setValidationError(
+          "Only PDF files are allowed. Non-PDF files were filtered out."
+        );
+      } else {
+        setValidationError(null);
+      }
+
+      setDocuments((prev) => [...prev, ...pdfFiles]);
     }
   };
 
-  const convertFileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        if (!result.startsWith("data:application/pdf;base64,")) {
-          return reject(new Error("Invalid file format — must be a PDF."));
-        }
-        const base64 = result.split(",")[1];
-        resolve(base64);
-      };
-      reader.onerror = () => {
-        reject(new Error("Failed to read file."));
-      };
-      reader.readAsDataURL(file);
-    });
+  const removeFile = (indexToRemove: number) => {
+    setDocuments((prev) => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const handleFinalSubmit = async (pdfBase64: string) => {
     setSubmitting(true);
     try {
-      const { error: insertError } = await supabase
-        .from("cases")
-        .insert([
-          {
-            case_number: `SF-2025-00${Math.floor(Math.random() * 1000)}`,
-            first_name: form.firstName,
-            last_name: form.lastName,
-            date_of_incident: form.date_of_incident,
-            type_of_incident: form.type_of_incident,
-            contact_phone: form.contact_phone,
-            contact_email: form.contact_email,
-            pdf_url: pdfBase64,
-            status: "New",
-          },
-        ]);
+      const { error: insertError } = await supabase.from("cases").insert([
+        {
+          case_number: `SF-2025-00${Math.floor(Math.random() * 1000)}`,
+          first_name: form.firstName,
+          last_name: form.lastName,
+          date_of_incident: form.date_of_incident,
+          type_of_incident: form.type_of_incident,
+          contact_phone: form.contact_phone,
+          contact_email: form.contact_email,
+          pdf_url: pdfBase64,
+          status: "New",
+        },
+      ]);
       if (insertError) throw new Error(insertError.message);
+
+      //Signcare API integration (commented out for now)
+      await axios.post(
+        "https://uat-ext.signcare.io/api/v1/esign/request",
+        {
+          referenceId: `CASE-0${Math.floor(Math.random() * 1000)}`,
+          skipVerificationCode: false,
+          documentInfo: {
+            name: "Rp test E",
+            content: pdfBase64,
+          },
+          supportingDocuments: [],
+          sequentialSigning: true,
+          userInfo: [
+            {
+              name: "Gyandeep Chauhan",
+              emailId: "rahul.patel@yopmail.com",
+              userType: "Reviewer",
+              signatureType: "Electronic",
+              electronicOptions: null,
+              aadhaarInfo: null,
+              aadhaarOptions: null,
+              expiryDate: null,
+              emailReminderDays: null,
+              mobileNo: "9638865899",
+              order: 1,
+              userReferenceId: "test123",
+              signAppearance: 5,
+              pageToBeSigned: null,
+              pageNumber: null,
+              pageCoordinates: [],
+            },
+            {
+              name: "Rahul Patel",
+              emailId: "dixit@atharvasystem.com",
+              userType: "Signer",
+              signatureType: "Electronic",
+              electronicOptions: {
+                canDraw: true,
+                canType: true,
+                canUpload: true,
+                captureGPSLocation: false,
+                capturePhoto: false,
+              },
+              aadhaarInfo: null,
+              aadhaarOptions: null,
+              expiryDate: null,
+              emailReminderDays: null,
+              mobileNo: "9638865899",
+              order: 2,
+              userReferenceId: "test123",
+              signAppearance: 5,
+              pageToBeSigned: null,
+              pageNumber: null,
+              pageCoordinates: [
+                {
+                  pageNumber: 1,
+                  PDFCoordinates: [
+                    {
+                      X1: "10",
+                      X2: "120",
+                      Y1: "722",
+                      Y2: "40",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+          descriptionForInvitee: "eSign By RP",
+          finalCopyRecipientsEmailId: "",
+        },
+        {
+          headers: {
+            "X-API-KEY": "LED3JHDbYgbmdl7fJfRRNk1xVgeAhbHO",
+            "X-API-APP-ID": "191ba7c3-f508-4ed3-896d-6d1c8687e2e7",
+          },
+        }
+      );
 
       setIsModalOpen(true);
       setForm({
@@ -86,7 +164,7 @@ const IncidentReportForm: React.FC = () => {
         contact_phone: "",
         contact_email: "",
       });
-      setDocument(null);
+      setDocuments([]);
     } catch (error: any) {
       alert(error.message);
     } finally {
@@ -110,7 +188,7 @@ const IncidentReportForm: React.FC = () => {
 
     setValidationError(null);
     setFormData(form);
-    setUploadedFiles(document ? [document] : []);
+    setUploadedFiles(documents);
     setPdfOpen(true);
   };
 
@@ -127,22 +205,26 @@ const IncidentReportForm: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Fields */}
-          {["firstName", "lastName", "contact_phone", "contact_email"].map((field, i) => (
-            <div key={field}>
-              <label className="block text-sm mb-1 font-medium capitalize">
-                {field.replace("_", " ")} *
-              </label>
-              <input
-                name={field}
-                value={(form as any)[field]}
-                onChange={handleChange}
-                className="w-full p-2 rounded bg-purple-100 border border-gray-300"
-                placeholder={`Enter ${field.replace("_", " ")}`}
-              />
-            </div>
-          ))}
+          {["firstName", "lastName", "contact_phone", "contact_email"].map(
+            (field, i) => (
+              <div key={field}>
+                <label className="block text-sm mb-1 font-medium capitalize">
+                  {field.replace("_", " ")} *
+                </label>
+                <input
+                  name={field}
+                  value={(form as any)[field]}
+                  onChange={handleChange}
+                  className="w-full p-2 rounded bg-purple-100 border border-gray-300"
+                  placeholder={`Enter ${field.replace("_", " ")}`}
+                />
+              </div>
+            )
+          )}
           <div>
-            <label className="block text-sm mb-1 font-medium">Date of Incident *</label>
+            <label className="block text-sm mb-1 font-medium">
+              Date of Incident *
+            </label>
             <input
               type="date"
               name="date_of_incident"
@@ -152,7 +234,9 @@ const IncidentReportForm: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-sm mb-1 font-medium">Type of Incident *</label>
+            <label className="block text-sm mb-1 font-medium">
+              Type of Incident *
+            </label>
             <select
               name="type_of_incident"
               value={form.type_of_incident}
@@ -168,14 +252,39 @@ const IncidentReportForm: React.FC = () => {
           </div>
           <div className="md:col-span-2">
             <label className="block text-sm mb-1 font-medium">
-              Upload Document
+              Upload Documents (PDF only)
             </label>
             <input
               type="file"
               accept=".pdf"
+              multiple
               onChange={handleFileChange}
               className="w-full p-2 bg-purple-100 rounded border border-gray-300"
             />
+            {documents.length > 0 && (
+              <div className="mt-3">
+                <p className="text-sm font-medium mb-2">
+                  Selected files ({documents.length}):
+                </p>
+                <div className="space-y-2">
+                  {documents.map((file, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                    >
+                      <span className="text-sm text-gray-700">{file.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeFile(index)}
+                        className="text-red-600 hover:text-red-800 text-sm"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -204,7 +313,6 @@ const IncidentReportForm: React.FC = () => {
           }}
         />
 
-
         {/* Success Modal */}
         <Dialog.Root open={isModalOpen} onOpenChange={setIsModalOpen}>
           <Dialog.Portal>
@@ -219,7 +327,9 @@ const IncidentReportForm: React.FC = () => {
               </Dialog.Description>
               <div className="flex justify-end">
                 <Dialog.Close asChild>
-                  <Button onClick={() => navigate("/wayfinder")}>Proceed</Button>
+                  <Button onClick={() => navigate("/wayfinder")}>
+                    Proceed
+                  </Button>
                 </Dialog.Close>
               </div>
             </Dialog.Content>
