@@ -34,22 +34,34 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 
 const Admin = () => {
-  const [cases, setCases] = useState([]); // Updated to fetch cases from the database
+  const [cases, setCases] = useState([]); // Cases from the database
+  const [rules, setRules] = useState([]); // Rules from the database
   const [filterRole, setFilterRole] = useState("all-roles");
   const [filterStatus, setFilterStatus] = useState("all-status");
 
   useEffect(() => {
-    const fetchCases = async () => {
-      const { data, error } = await supabase.from("cases").select("*");
-      if (error) {
-        console.error("Error fetching cases:", error);
-      } else {
-        console.log("Fetched cases:", data);
-        setCases(data);
+    const fetchCasesAndRules = async () => {
+      try {
+        // Fetch cases
+        const { data: casesData, error: casesError } = await supabase
+          .from("cases")
+          .select("*");
+        if (casesError) throw casesError;
+
+        // Fetch rules
+        const { data: rulesData, error: rulesError } = await supabase
+          .from("rules")
+          .select("*");
+        if (rulesError) throw rulesError;
+
+        setCases(casesData || []);
+        setRules(rulesData || []);
+      } catch (error) {
+        console.error("Error fetching data:", error);
       }
     };
 
-    fetchCases();
+    fetchCasesAndRules();
   }, []);
 
   const filteredCases = cases
@@ -96,6 +108,10 @@ const Admin = () => {
         caseItem.id === updatedCase.data[0].id ? updatedCase.data[0] : caseItem
       )
     );
+  };
+  const getPriorityByRuleId = (ruleId) => {
+    const rule = rules.find((r) => r.id === ruleId);
+    return rule ? rule.priority : "N/A"; // Return "N/A" if no matching rule is found
   };
   return (
     <Layout>
@@ -213,6 +229,7 @@ const Admin = () => {
                         <TableHead>Status</TableHead>
                         <TableHead>Type of Incident</TableHead>
                         <TableHead>Contact Email</TableHead>
+                        <TableHead>Priority</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -241,6 +258,9 @@ const Admin = () => {
                           </TableCell>
                           <TableCell>{caseItem.type_of_incident}</TableCell>
                           <TableCell>{caseItem.contact_email}</TableCell>
+                          <TableCell>
+                            {getPriorityByRuleId(caseItem.rule_applied)}
+                          </TableCell>
                           <TableCell>
                             <div className="flex gap-2">
                               <Button
