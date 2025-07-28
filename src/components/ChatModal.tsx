@@ -7,9 +7,8 @@ import {
 } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { X, Send, MessageCircle, Info, Lock, User as UserIcon } from "lucide-react";
+import { X, Send, MessageCircle, Info, User as UserIcon } from "lucide-react";
 
-// Mock case data for demonstration
 const MOCK_CASES = [
   {
     id: "INC-12345",
@@ -53,7 +52,6 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -77,7 +75,7 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
       timestamp: now,
     };
     setMessages((prev) => [...prev, userMessage]);
-    setMessage(""); // Clear input after sending
+    setMessage("");
 
     setIsStreaming(true);
     setStreamedResponse("");
@@ -123,7 +121,6 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
         done = doneReading;
         if (value) {
           const chunk = decoder.decode(value, { stream: true });
-          // OpenAI streams data as "data: ..." lines, parse them:
           chunk.split("\n").forEach((line) => {
             if (line.startsWith("data: ")) {
               const dataStr = line.replace("data: ", "").trim();
@@ -159,8 +156,7 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
         ...prev,
         {
           type: "assistant",
-          content:
-            "Sorry, I couldn't get an answer at the moment. Please try again.",
+          content: "Sorry, I couldn't get an answer at the moment. Please try again.",
           timestamp: new Date().toLocaleTimeString(),
         },
       ]);
@@ -169,24 +165,6 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
 
   const handleQuickQuestion = (question: string) => {
     setMessage(question);
-  };
-
-  // Helper for status badge
-  const statusBadge = (status: string) => {
-    if (status === "Under Review")
-      return <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-0.5 rounded font-medium mr-2">Under Review</span>;
-    if (status === "Resolved")
-      return <span className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded font-medium mr-2">Resolved</span>;
-    return <span className="bg-gray-100 text-gray-800 text-xs px-2 py-0.5 rounded font-medium mr-2">{status}</span>;
-  };
-
-  // Helper for priority badge
-  const priorityBadge = (priority: string) => {
-    if (priority === "High")
-      return <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded font-medium">High</span>;
-    if (priority === "Medium")
-      return <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded font-medium">Medium</span>;
-    return <span className="bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded font-medium">{priority}</span>;
   };
 
   return (
@@ -223,8 +201,7 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
                 key={index}
                 variant="outline"
                 size="sm"
-                className="rounded-full text-xs px-3 py-1 border border-blue-100 bg-white transition-colors
-                  hover:bg-blue-500 hover:text-white hover:border-blue-500 focus:ring-2 focus:ring-blue-100 font-medium"
+                className="rounded-full text-xs px-3 py-1 border border-blue-100 bg-white transition-colors hover:bg-blue-500 hover:text-white hover:border-blue-500 focus:ring-2 focus:ring-blue-100 font-medium"
                 onClick={() => handleQuickQuestion(question)}
               >
                 {question}
@@ -245,7 +222,7 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
                     <MessageCircle className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <div className="bg-white border border-blue-100 rounded-xl rounded-bl-none p-3 text-sm text-gray-900 shadow-sm max-w-md">
+                    <div className="bg-white border border-blue-100 rounded-xl rounded-bl-none px-4 py-2 text-sm text-gray-900 shadow-sm max-w-[600px] whitespace-pre-wrap font-mono">
                       {msg.content}
                     </div>
                     <div className="text-xs mt-1 text-gray-400 pl-2">{msg.timestamp}</div>
@@ -257,7 +234,7 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
                     <UserIcon className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <div className="bg-blue-500 text-white rounded-xl rounded-br-none p-3 text-sm max-w-md shadow-sm">
+                    <div className="bg-blue-500 text-white rounded-xl rounded-br-none px-4 py-2 text-sm max-w-[600px] shadow-sm whitespace-pre-wrap">
                       {msg.content}
                     </div>
                     <div className="text-xs mt-1 text-gray-200 pr-2 text-right">{msg.timestamp}</div>
@@ -266,7 +243,6 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
               )}
             </div>
           ))}
-          {/* Streaming assistant message */}
           {isStreaming && (
             <div className="flex justify-start">
               <div className="flex items-end gap-2">
@@ -274,7 +250,7 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
                   <MessageCircle className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <div className="bg-white border border-blue-100 rounded-xl rounded-bl-none p-3 text-sm text-gray-900 shadow-sm max-w-md whitespace-pre-line">
+                  <div className="bg-white border border-blue-100 rounded-xl rounded-bl-none px-4 py-2 text-sm text-gray-900 shadow-sm max-w-[600px] whitespace-pre-wrap font-mono">
                     {streamedResponse}
                     <span className="animate-pulse text-blue-400 ml-1">|</span>
                   </div>
@@ -294,18 +270,13 @@ const ChatModal = ({ open, onOpenChange }: ChatModalProps) => {
               onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
               className="text-sm rounded-md"
             />
-            <Button
-              onClick={handleSendMessage}
-              className="bg-blue-600 text-white px-3"
-            >
+            <Button onClick={handleSendMessage} className="bg-blue-600 text-white px-3">
               <Send className="w-4 h-4" />
             </Button>
           </div>
           <div className="flex items-start gap-2 text-xs text-muted-foreground">
             <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-            <span>
-              This AI assistant provides general guidance only, not legal advice.
-            </span>
+            <span>This AI assistant provides general guidance only, not legal advice.</span>
           </div>
         </div>
       </DialogContent>
