@@ -9,7 +9,6 @@ import axios from "axios";
 import ChatModal from "@/components/ChatModal";
 import { matchRuleUsingOpenAI } from "@/utils/ruleEngine";
 
-
 const IncidentReportForm: React.FC = () => {
   const [form, setForm] = useState({
     first_name: "",
@@ -20,10 +19,10 @@ const IncidentReportForm: React.FC = () => {
     contact_email: "",
     case_number: "",
     signer_email: "", // Added for rule matching
-    reviewer_email  : "", // Added for rule matching
+    reviewer_email: "", // Added for rule matching
     pdf_url: "", // Base64 encoded PDF
     status: "New", // Default status
-    rule_applied  : "", // Rule ID applied
+    rule_applied: "", // Rule ID applied
   });
 
   const [documents, setDocuments] = useState<File[]>([]);
@@ -69,48 +68,57 @@ const IncidentReportForm: React.FC = () => {
     setDocuments((prev) => prev.filter((_, index) => index !== indexToRemove));
   };
 
-  const generateCaseNumber = () => `SF-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
+  const generateCaseNumber = () =>
+    `SF-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
   const handleFinalSubmit = async (pdfBase64: string) => {
     setSubmitting(true);
     try {
-      const generatedCaseNumber = generateCaseNumber();
-      ``
+      const generatedCaseNumberVal = generateCaseNumber();
       const newCase = {
-        ...form,
+        first_name: form.first_name,
+        last_name: form.last_name,
+        date_of_incident: form.date_of_incident,
+        type_of_incident: form.type_of_incident,
+        contact_phone: form.contact_phone,
+        contact_email: form.contact_email,
+        case_number: generatedCaseNumberVal,
         pdf_url: pdfBase64,
-        case_number: generatedCaseNumber
+        signer_email: form.signer_email,
+        reviewer_email: form.reviewer_email,
+        status: form.status,
+        rule_applied: form.rule_applied,
       };
+      const summaryCase = {
+        type_of_incident: newCase.type_of_incident,
+        date_of_incident: newCase.date_of_incident,
+        contact_email: newCase.contact_email,
+      };
+      const { data: rules, error } = await supabase.from('rules').select('*');
+      if (error) throw error;
+      const ruleMatch = await matchRuleUsingOpenAI(summaryCase, rules || []);
+      newCase.signer_email = ruleMatch.signer_email;
+      newCase.reviewer_email = ruleMatch.reviewer_email;
+      newCase.rule_applied = ruleMatch.rule_id;
+      const { error: insertError } = await supabase.from('cases').insert([newCase]);
+      if (insertError) throw insertError;
 
-      const { data: rules } = await supabase.from("rules").select("*");
-      const ruleMatch = await matchRuleUsingOpenAI(newCase, rules || []);
-
-      if (ruleMatch) {
-        newCase.signer_email = ruleMatch.signer_email;
-        newCase.reviewer_email = ruleMatch.reviewer_email;
-        newCase.rule_applied = ruleMatch.rule_id;
-      }
-
-      const { error: insertError } = await supabase.from("cases").insert([newCase]);
-      if (insertError) throw new Error(insertError.message);
-
-      //Signcare API integration (commented out for now)
-      await axios.post(
-        "https://uat-ext.signcare.io/api/v1/esign/request",
+      // Call the SignCare API
+      const signcareResponse = await axios.post(
+        `${import.meta.env.VITE_API_SC_BASE}/esign/request`,
         {
-          referenceId: `CASE-0${Math.floor(Math.random() * 1000)}`,
+          referenceId: newCase.case_number, // Use the unique case number as the reference ID
           skipVerificationCode: false,
           documentInfo: {
-            name: "Rp test E",
-            content: pdfBase64,
+            name: `Incident Report - ${newCase.case_number}`, // Use a descriptive name for the document
+            content: pdfBase64, // Base64-encoded PDF content
           },
-          supportingDocuments: [],
-          sequentialSigning: true,
+          supportingDocuments: [], // Add any additional supporting documents if needed
+          sequentialSigning: true, // Enable sequential signing
           userInfo: [
             {
-              name: "Gyandeep Chauhan",
-              emailId: "rahul.patel@yopmail.com",
+              name: newCase.reviewer_email ? "Reviewer" : "Default Reviewer", // Reviewer name
+              emailId: newCase.reviewer_email || "defaultreviewer@yopmail.com", // Reviewer email
               userType: "Reviewer",
               signatureType: "Electronic",
               electronicOptions: null,
@@ -118,17 +126,17 @@ const IncidentReportForm: React.FC = () => {
               aadhaarOptions: null,
               expiryDate: null,
               emailReminderDays: null,
-              mobileNo: "9638865899",
-              order: 1,
-              userReferenceId: "test123",
+              mobileNo: newCase.contact_phone, // Use the contact phone for the reviewer
+              order: 1, // Reviewer signs first
+              userReferenceId: "reviewer123",
               signAppearance: 5,
               pageToBeSigned: null,
               pageNumber: null,
               pageCoordinates: [],
             },
             {
-              name: "Rahul Patel",
-              emailId: "dixit@atharvasystem.com",
+              name: `${newCase.first_name} ${newCase.last_name}`, // Signer's full name
+              emailId: newCase.signer_email || newCase.contact_email, // Signer's email
               userType: "Signer",
               signatureType: "Electronic",
               electronicOptions: {
@@ -142,9 +150,9 @@ const IncidentReportForm: React.FC = () => {
               aadhaarOptions: null,
               expiryDate: null,
               emailReminderDays: null,
-              mobileNo: "9638865899",
-              order: 2,
-              userReferenceId: "test123",
+              mobileNo: newCase.contact_phone, // Use the contact phone for the signer
+              order: 2, // Signer signs after the reviewer
+              userReferenceId: "signer123",
               signAppearance: 5,
               pageToBeSigned: null,
               pageNumber: null,
@@ -163,18 +171,67 @@ const IncidentReportForm: React.FC = () => {
               ],
             },
           ],
-          descriptionForInvitee: "eSign By RP",
-          finalCopyRecipientsEmailId: "",
+          descriptionForInvitee: `Incident Report for ${newCase.type_of_incident}`, // Description for the invitee
+          finalCopyRecipientsEmailId: newCase.contact_email, // Send the final copy to the contact email
         },
         {
           headers: {
-            "X-API-KEY": "LED3JHDbYgbmdl7fJfRRNk1xVgeAhbHO",
-            "X-API-APP-ID": "191ba7c3-f508-4ed3-896d-6d1c8687e2e7",
+            "X-API-KEY": `${import.meta.env.VITE_API_SC_X_KEY}`,
+            "X-API-APP-ID": `${import.meta.env.VITE_API_SC_X_ID}`,
           },
         }
       );
 
+      console.log("SignCare Response:", signcareResponse.data);
+      console.log("SignCare Response:", signcareResponse.data.documentId);
+
+
+      if (signcareResponse.status !== 200) {
+        throw new Error("Failed to create SignCare request");
+      }
+
+      // Fetch the initial case for updating
+      const { data: initialCase, error: fetchError } = await supabase
+        .from("cases")
+        .select("*")
+        .eq("case_number", newCase.case_number)
+        .single();
+
+      if (fetchError || !initialCase) {
+        throw new Error("Failed to fetch the initial case for updating.");
+      }
+
+      // Update the case with the SignCare document ID
+      await supabase
+        .from("cases")
+        .update({ signcare_doc_id: signcareResponse.data.data.documentId })
+        .eq("id", initialCase.id);
+
+      // Call the SignCare status API
+      const statusResponse = await axios.post(
+        `${import.meta.env.VITE_API_SC_BASE}/esign/status`,
+        {
+          documentId: signcareResponse.data.data.documentId,
+          documentReferenceId: newCase.case_number,
+        },
+        {
+          headers: {
+            "X-API-KEY": `${import.meta.env.VITE_API_SC_X_KEY}`,
+            "X-API-APP-ID": `${import.meta.env.VITE_API_SC_X_ID}`,
+          },
+        }
+      );
+
+      // Update the case status in the database
+      await supabase
+        .from("cases")
+        .update({ status: statusResponse.data.data.documentStatus })
+        .eq("id", initialCase.id);
+
+      // Show success modal
       setIsModalOpen(true);
+
+      // Reset the form
       setForm({
         first_name: "",
         last_name: "",
@@ -184,10 +241,10 @@ const IncidentReportForm: React.FC = () => {
         contact_email: "",
         case_number: "",
         signer_email: "",
-        reviewer_email  : "",
+        reviewer_email: "",
         pdf_url: "",
         status: "",
-        rule_applied  : "",
+        rule_applied: "",
       });
       setDocuments([]);
     } catch (error: any) {
@@ -265,22 +322,25 @@ const IncidentReportForm: React.FC = () => {
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {["first_name", "last_name", "contact_phone", "contact_email"].map(
-                (field) => (
-                  <div key={field}>
-                    <label className="block text-sm mb-1 font-medium capitalize">
-                      {field.replace("_", " ")} *
-                    </label>
-                    <input
-                      name={field}
-                      value={(form as any)[field]}
-                      onChange={handleChange}
-                      className="w-full p-2 rounded bg-purple-100 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
-                      placeholder={`Enter ${field.replace("_", " ")}`}
-                    />
-                  </div>
-                )
-              )}
+              {[
+                "first_name",
+                "last_name",
+                "contact_phone",
+                "contact_email",
+              ].map((field) => (
+                <div key={field}>
+                  <label className="block text-sm mb-1 font-medium capitalize">
+                    {field.replace("_", " ")} *
+                  </label>
+                  <input
+                    name={field}
+                    value={(form as any)[field]}
+                    onChange={handleChange}
+                    className="w-full p-2 rounded bg-purple-100 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
+                    placeholder={`Enter ${field.replace("_", " ")}`}
+                  />
+                </div>
+              ))}
               <div>
                 <label className="block text-sm mb-1 font-medium">
                   Date of Incident *

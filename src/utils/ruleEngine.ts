@@ -1,32 +1,51 @@
-// src/utils/ruleEngine.ts
+// File: src/utils/ruleEngine.ts
+
 import { fetchOpenAIResponse } from './openaiClient';
 
-export const matchRuleUsingOpenAI = async (caseDetails: any, rules: any[]) => {
-  const prompt = `You are a rule engine. From the following rules, choose the most appropriate rule based on the given case details. Return JSON with {rule_id, priority, signer_email, reviewer_email}.
+export const matchRuleUsingOpenAI = async (
+  caseDetails: any,
+  rules: any[]
+) => {
+  // Reduce to 10 top priority rules and only keep short text
+  const trimmedRules = rules
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, 10)
+    .map(({ id, type_of_incident, priority, signer_email, reviewer_email }) => ({
+      id,
+      type_of_incident,
+      priority,
+      signer_email,
+      reviewer_email,
+    }));
 
-CASE:\n${JSON.stringify(caseDetails, null, 2)}
+  const compactPrompt = `
+CASE:
+${JSON.stringify({
+    type_of_incident: caseDetails.type_of_incident,
+    date_of_incident: caseDetails.date_of_incident,
+    contact_email: caseDetails.contact_email,
+  }, null, 2)}
 
-RULES:\n${rules
+RULES:
+${trimmedRules
     .map(
-      (rule, i) => `Rule ${i + 1}: ${rule.name}\nCondition: ${rule.condition}\nPriority: ${rule.priority}\nSigner: ${rule.signer_email}, Reviewer: ${rule.reviewer_email}`
+      (r, i) => `Rule ${i + 1}: id=${r.id}, type=${r.type_of_incident}, priority=${r.priority}, signer=${r.signer_email}, reviewer=${r.reviewer_email}`
     )
-    .join('\n\n')}
+    .join('\n')}
 
-Return only JSON.`;
+Return JSON: {"rule_id": "...", "priority":"...", "signer_email":"...", "reviewer_email":"..."}
+`;
 
+  const response = await fetchOpenAIResponse(compactPrompt);
   try {
-    const data = await fetchOpenAIResponse(prompt);
-    const content = data.choices?.[0]?.message?.content || '{}';
-    return JSON.parse(content);
-  } catch (e) {
-    console.error('Failed to fetch OpenAI rule match response', e);
-    // fallback default rule (optional)
-    const fallback = rules.find((r) => r.priority === 'high') || rules[0];
+    return JSON.parse(response);
+  } catch {
+    const fallback = trimmedRules[0];
     return {
-      rule_id: fallback?.id || null,
-      priority: fallback?.priority || 'low',
-      signer_email: fallback?.signer_email || '',
-      reviewer_email: fallback?.reviewer_email || '',
+      rule_id: fallback?.id,
+      priority: fallback?.priority,
+      signer_email: fallback?.signer_email,
+      reviewer_email: fallback?.reviewer_email,
     };
   }
 };
