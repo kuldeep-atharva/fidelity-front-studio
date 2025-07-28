@@ -75,6 +75,7 @@ const IncidentReportForm: React.FC = () => {
     setSubmitting(true);
     try {
       const generatedCaseNumberVal = generateCaseNumber();
+      localStorage.setItem("case_number", generatedCaseNumberVal);
       const newCase = {
         first_name: form.first_name,
         last_name: form.last_name,
@@ -575,7 +576,7 @@ const IncidentReportForm: React.FC = () => {
                 Report Submitted Successfully
               </Dialog.Title>
               <Dialog.Description className="text-gray-600 mb-6">
-                Your incident report has been received by the Superior Court of
+                Your incident report (<strong> {localStorage.getItem("case_number")} </strong>) has been received by the Superior Court of
                 San Francisco County.
               </Dialog.Description>
               <div className="flex justify-end">
@@ -584,6 +585,7 @@ const IncidentReportForm: React.FC = () => {
                     onClick={() => {
                       setIsOpen(true);
                       navigate("/");
+                      localStorage.removeItem("case_number");
                     }}
                   >
                     Proceed
