@@ -144,12 +144,12 @@ const FinalSubmissionPdf = ({
         y -= 24;
       };
 
-      drawLabel("First Name:", safe("firstName"));
-      drawLabel("Last Name:", safe("lastName"));
-      drawLabel("Contact Phone:", safe("contact_phone"));
-      drawLabel("Contact Email:", safe("contact_email"));
-      drawLabel("Incident Type:", safe("type_of_incident"));
-      drawLabel("Date of Incident:", safe("date_of_incident"));
+      drawLabel("First Name", safe("first_name"));
+      drawLabel("Last Name", safe("last_name"));
+      drawLabel("Phone", safe("contact_phone"));
+      drawLabel("Email", safe("contact_email"));
+      drawLabel("Incident Type", safe("type_of_incident"));
+      drawLabel("Incident Date", safe("date_of_incident"));
 
       // Add file attachment summary
       if (uploadedFiles.length > 0) {
