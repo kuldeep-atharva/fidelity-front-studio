@@ -116,11 +116,29 @@ const Admin = () => {
       }
     );
 
+    const responseData = statusResponse.data.data;
+
+    // Check if reviewer123 has Approved status
+    const reviewerApproved = responseData.signerInfo?.some(
+      (signer) =>
+        signer.signerRefId === "reviewer123" &&
+        signer.signerStatus === "Approved"
+    );
+
+    const finalStatus = reviewerApproved
+      ? "Reviewed"
+      : responseData.documentStatus;
+
     const updatedCase = await supabase
       .from("cases")
-      .update({ status: statusResponse.data.data.documentStatus })
+      .update({ status: finalStatus })
       .eq("id", id)
       .select();
+      // const updatedCase = await supabase
+      // .from("cases")
+      // .update({ status: statusResponse.data.data.documentStatus })
+      // .eq("id", id)
+      // .select();
     console.log("Updated case:", updatedCase);
     setCases((prev) =>
       prev.map((caseItem) =>
@@ -185,8 +203,10 @@ const Admin = () => {
               iconBg="bg-muted-foreground"
             />
             <StatsCard
-              title="New Cases"
-              value={cases.filter((c) => c.status === "New").length.toString()}
+              title="Pending Cases"
+              value={cases
+                .filter((c) => c.status === "Pending")
+                .length.toString()}
               icon={<Clock className="w-5 h-5" />}
               iconBg="bg-destructive"
             />
@@ -199,9 +219,9 @@ const Admin = () => {
               iconBg="bg-success"
             />
             <StatsCard
-              title="Closed Cases"
+              title="Rejected Cases"
               value={cases
-                .filter((c) => c.status === "Closed")
+                .filter((c) => c.status === "Rejected")
                 .length.toString()}
               icon={<FileText className="w-5 h-5" />}
               iconBg="bg-muted-foreground"
