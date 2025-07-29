@@ -18,11 +18,11 @@ const IncidentReportForm: React.FC = () => {
     contact_phone: "",
     contact_email: "",
     case_number: "",
-    signer_email: "", // Added for rule matching
-    reviewer_email: "", // Added for rule matching
-    pdf_url: "", // Base64 encoded PDF
-    status: "New", // Default status
-    rule_applied: "", // Rule ID applied
+    signer_email: "",
+    reviewer_email: "",
+    pdf_url: "",
+    status: "New",
+    rule_applied: "",
   });
 
   const [documents, setDocuments] = useState<File[]>([]);
@@ -33,7 +33,6 @@ const IncidentReportForm: React.FC = () => {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
-  const [isOpen, setIsOpen] = useState(false);
 
   const navigate = useNavigate();
 
@@ -47,7 +46,6 @@ const IncidentReportForm: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
-      // Filter only PDF files
       const pdfFiles = newFiles.filter(
         (file) => file.type === "application/pdf"
       );
@@ -95,31 +93,45 @@ const IncidentReportForm: React.FC = () => {
         date_of_incident: newCase.date_of_incident,
         contact_email: newCase.contact_email,
       };
-      const { data: rules, error } = await supabase.from('rules').select('*');
-      if (error) throw error;
-      const ruleMatch = await matchRuleUsingOpenAI(summaryCase, rules || []);
-      newCase.signer_email = ruleMatch.signer_email;
-      newCase.reviewer_email = ruleMatch.reviewer_email;
-      newCase.rule_applied = ruleMatch.rule_id;
-      const { error: insertError } = await supabase.from('cases').insert([newCase]);
+      const { data: rules, error: rulesError } = await supabase
+        .from('rules')
+        .select('*')
+        .eq('status', 'active');
+      if (rulesError || !rules) throw new Error('Failed to fetch rules');
+
+      const ruleMatch = await matchRuleUsingOpenAI(summaryCase, rules);
+      setForm((prev) => ({
+        ...prev,
+        signer_email: ruleMatch.signer_email,
+        reviewer_email: ruleMatch.reviewer_email,
+        rule_applied: ruleMatch.rule_id,
+      }));
+
+      const updatedCase = {
+        ...newCase,
+        signer_email: ruleMatch.signer_email,
+        reviewer_email: ruleMatch.reviewer_email,
+        rule_applied: ruleMatch.rule_id,
+      };
+
+      const { error: insertError } = await supabase.from('cases').insert([updatedCase]);
       if (insertError) throw insertError;
 
-      // Call the SignCare API
       const signcareResponse = await axios.post(
         `${import.meta.env.VITE_API_SC_BASE}/esign/request`,
         {
-          referenceId: newCase.case_number, // Use the unique case number as the reference ID
+          referenceId: updatedCase.case_number,
           skipVerificationCode: false,
           documentInfo: {
-            name: `Incident Report - ${newCase.case_number}`, // Use a descriptive name for the document
-            content: pdfBase64, // Base64-encoded PDF content
+            name: `Incident Report - ${updatedCase.case_number}`,
+            content: pdfBase64,
           },
-          supportingDocuments: [], // Add any additional supporting documents if needed
-          sequentialSigning: true, // Enable sequential signing
+          supportingDocuments: [],
+          sequentialSigning: true,
           userInfo: [
             {
-              name: newCase.reviewer_email ? "Reviewer" : "Default Reviewer", // Reviewer name
-              emailId: newCase.reviewer_email || "defaultreviewer@yopmail.com", // Reviewer email
+              name: updatedCase.reviewer_email ? "Reviewer" : "Default Reviewer",
+              emailId: updatedCase.reviewer_email || "defaultreviewer@yopmail.com",
               userType: "Reviewer",
               signatureType: "Electronic",
               electronicOptions: null,
@@ -127,8 +139,8 @@ const IncidentReportForm: React.FC = () => {
               aadhaarOptions: null,
               expiryDate: null,
               emailReminderDays: null,
-              mobileNo: newCase.contact_phone, // Use the contact phone for the reviewer
-              order: 1, // Reviewer signs first
+              mobileNo: updatedCase.contact_phone,
+              order: 1,
               userReferenceId: "reviewer123",
               signAppearance: 5,
               pageToBeSigned: null,
@@ -136,8 +148,8 @@ const IncidentReportForm: React.FC = () => {
               pageCoordinates: [],
             },
             {
-              name: `${newCase.first_name} ${newCase.last_name}`, // Signer's full name
-              emailId: newCase.signer_email || newCase.contact_email, // Signer's email
+              name: `${updatedCase.first_name} ${updatedCase.last_name}`,
+              emailId: updatedCase.signer_email || updatedCase.contact_email,
               userType: "Signer",
               signatureType: "Electronic",
               electronicOptions: {
@@ -151,8 +163,8 @@ const IncidentReportForm: React.FC = () => {
               aadhaarOptions: null,
               expiryDate: null,
               emailReminderDays: null,
-              mobileNo: newCase.contact_phone, // Use the contact phone for the signer
-              order: 2, // Signer signs after the reviewer
+              mobileNo: updatedCase.contact_phone,
+              order: 2,
               userReferenceId: "signer123",
               signAppearance: 5,
               pageToBeSigned: null,
@@ -172,8 +184,8 @@ const IncidentReportForm: React.FC = () => {
               ],
             },
           ],
-          descriptionForInvitee: `Incident Report for ${newCase.type_of_incident}`, // Description for the invitee
-          finalCopyRecipientsEmailId: newCase.contact_email, // Send the final copy to the contact email
+          descriptionForInvitee: `Incident Report for ${updatedCase.type_of_incident}`,
+          finalCopyRecipientsEmailId: updatedCase.contact_email,
         },
         {
           headers: {
@@ -183,37 +195,30 @@ const IncidentReportForm: React.FC = () => {
         }
       );
 
-      console.log("SignCare Response:", signcareResponse.data);
-      console.log("SignCare Response:", signcareResponse.data.documentId);
-
-
       if (signcareResponse.status !== 200) {
         throw new Error("Failed to create SignCare request");
       }
 
-      // Fetch the initial case for updating
       const { data: initialCase, error: fetchError } = await supabase
         .from("cases")
         .select("*")
-        .eq("case_number", newCase.case_number)
+        .eq("case_number", updatedCase.case_number)
         .single();
 
       if (fetchError || !initialCase) {
         throw new Error("Failed to fetch the initial case for updating.");
       }
 
-      // Update the case with the SignCare document ID
       await supabase
         .from("cases")
         .update({ signcare_doc_id: signcareResponse.data.data.documentId })
         .eq("id", initialCase.id);
 
-      // Call the SignCare status API
       const statusResponse = await axios.post(
         `${import.meta.env.VITE_API_SC_BASE}/esign/status`,
         {
           documentId: signcareResponse.data.data.documentId,
-          documentReferenceId: newCase.case_number,
+          documentReferenceId: updatedCase.case_number,
         },
         {
           headers: {
@@ -223,16 +228,13 @@ const IncidentReportForm: React.FC = () => {
         }
       );
 
-      // Update the case status in the database
       await supabase
         .from("cases")
         .update({ status: statusResponse.data.data.documentStatus })
         .eq("id", initialCase.id);
 
-      // Show success modal
       setIsModalOpen(true);
 
-      // Reset the form
       setForm({
         first_name: "",
         last_name: "",
@@ -295,24 +297,6 @@ const IncidentReportForm: React.FC = () => {
   return (
     <Layout>
       <div className="mx-auto mt-10 bg-white shadow-lg rounded-lg p-10">
-        {/* Step Indicator */}
-        {/* <div className="flex items-center justify-center mb-8">
-          <div className="flex items-center space-x-4">
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full font-bold text-sm ${
-              currentStep === 1 ? 'bg-sky-600 text-white' : 'bg-sky-100 text-sky-600'
-            }`}>
-              1
-            </div>
-            <div className={`h-1 w-16 ${currentStep === 2 ? 'bg-sky-600' : 'bg-gray-300'}`}></div>
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full font-bold text-sm ${
-              currentStep === 2 ? 'bg-sky-600 text-white' : 'bg-gray-300 text-gray-500'
-            }`}>
-              2
-            </div>
-          </div>
-        </div> */}
-
-        {/* Step 1: Basic Information */}
         {currentStep === 1 && (
           <>
             <h2 className="text-2xl font-bold text-center mb-4 text-sky-900">
@@ -391,7 +375,6 @@ const IncidentReportForm: React.FC = () => {
           </>
         )}
 
-        {/* Step 2: Document Upload */}
         {currentStep === 2 && (
           <>
             <h2 className="text-2xl font-bold text-center mb-4 text-sky-900">
@@ -402,7 +385,6 @@ const IncidentReportForm: React.FC = () => {
               (optional)
             </p>
 
-            {/* Document Upload Area */}
             <div className="border-2 border-dashed border-sky-300 rounded-lg p-8 mb-6 bg-gradient-to-br from-sky-50 to-purple-50">
               <div className="text-center">
                 <div className="mb-4">
@@ -456,7 +438,6 @@ const IncidentReportForm: React.FC = () => {
               </div>
             </div>
 
-            {/* Selected Files Display */}
             {documents.length > 0 && (
               <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6 mb-6">
                 <div className="flex items-center mb-4">
@@ -547,7 +528,6 @@ const IncidentReportForm: React.FC = () => {
               <Button
                 onClick={validateAndPreview}
                 disabled={submitting}
-                // className="bg-gradient-to-r from-sky-500 to-purple-600 hover:from-sky-600 hover:to-purple-700"
               >
                 {submitting ? "Submitting..." : "Review & Submit"}
               </Button>
@@ -555,7 +535,6 @@ const IncidentReportForm: React.FC = () => {
           </>
         )}
 
-        {/* PDF Modal */}
         <FinalSubmissionPdf
           open={pdfOpen}
           onOpenChange={setPdfOpen}
@@ -567,7 +546,6 @@ const IncidentReportForm: React.FC = () => {
           }}
         />
 
-        {/* Success Modal */}
         <Dialog.Root open={isModalOpen} onOpenChange={setIsModalOpen}>
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-50" />
@@ -583,7 +561,6 @@ const IncidentReportForm: React.FC = () => {
                 <Dialog.Close asChild>
                   <Button
                     onClick={() => {
-                      setIsOpen(true);
                       navigate("/");
                       localStorage.removeItem("case_number");
                     }}
@@ -596,8 +573,6 @@ const IncidentReportForm: React.FC = () => {
           </Dialog.Portal>
         </Dialog.Root>
       </div>
-
-      <ChatModal open={isOpen} onOpenChange={setIsOpen} />
     </Layout>
   );
 };

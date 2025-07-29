@@ -70,7 +70,6 @@ const FinalSubmissionPdf = ({
         console.warn("Seal image not loaded.");
       }
 
-      // First, append all uploaded PDF files in order
       const attachmentStartPage = [];
       for (let i = 0; i < uploadedFiles.length; i++) {
         const file = uploadedFiles[i];
@@ -84,17 +83,14 @@ const FinalSubmissionPdf = ({
           }
         } catch (fileError) {
           console.warn(`Failed to process file ${file.name}:`, fileError);
-          // Continue processing other files even if one fails
         }
       }
 
-      // Now create the detailed form page as the LAST page
       const formPage = pdfDoc.addPage([612, 792]);
       const { width, height } = formPage.getSize();
       let y = height - 72;
       const safe = (key: string) => formData[key] || "—";
 
-      // Watermark
       if (sealImage) {
         const dims = sealImage.scale(0.3);
         formPage.drawImage(sealImage, {
@@ -106,13 +102,11 @@ const FinalSubmissionPdf = ({
         });
       }
 
-      // Header
       formPage.drawText("UNITED STATES DISTRICT COURT", { x: 72, y, size: 14, font });
       y -= 18;
       formPage.drawText("NORTHERN DISTRICT OF CALIFORNIA", { x: 72, y, size: 14, font });
       y -= 36;
 
-      // Caption box
       formPage.drawRectangle({
         x: 60,
         y: y - 80,
@@ -151,7 +145,6 @@ const FinalSubmissionPdf = ({
       drawLabel("Incident Type", safe("type_of_incident"));
       drawLabel("Incident Date", safe("date_of_incident"));
 
-      // Add file attachment summary
       if (uploadedFiles.length > 0) {
         y -= 30;
         formPage.drawText("ATTACHED SUPPORTING DOCUMENTS:", { x: 72, y, size: 12, font });
@@ -177,10 +170,9 @@ const FinalSubmissionPdf = ({
       formPage.drawLine({ start: { x: 72, y }, end: { x: width - 72, y }, thickness: 1 });
       y -= 20;
 
-      // Submission details
       formPage.drawText("SUBMISSION DETAILS:", { x: 72, y, size: 12, font });
       y -= 20;
-      formPage.drawText(`Submitted on: ${new Date().toLocaleDateString()}`, { x: 90, y, size: 10, font });
+      formPage.drawText(`Submitted on: ${new Date('2025-07-29T13:46:00+05:30').toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`, { x: 90, y, size: 10, font });
       y -= 16;
       formPage.drawText(`Total Pages: ${pdfDoc.getPageCount()}`, { x: 90, y, size: 10, font });
       y -= 16;
@@ -200,7 +192,6 @@ const FinalSubmissionPdf = ({
         y -= 14;
       });
 
-      // Add footer to all pages with proper labeling
       const totalPages = pdfDoc.getPageCount();
       for (let i = 0; i < totalPages; i++) {
         const p = pdfDoc.getPage(i);
@@ -215,10 +206,8 @@ const FinalSubmissionPdf = ({
         
         let footerLabel = "";
         if (i === totalPages - 1) {
-          // Last page is the detailed form
           footerLabel = "Incident Report - Detailed Form";
         } else {
-          // Find which attachment this page belongs to
           let attachmentIndex = -1;
           for (let j = 0; j < attachmentStartPage.length; j++) {
             if (i >= attachmentStartPage[j] && (j === attachmentStartPage.length - 1 || i < attachmentStartPage[j + 1])) {
@@ -255,7 +244,6 @@ const FinalSubmissionPdf = ({
       const url = URL.createObjectURL(blob);
       setPdfUrl(url);
 
-      // Convert to base64 for storage
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = (reader.result as string).split(",")[1];
@@ -275,7 +263,6 @@ const FinalSubmissionPdf = ({
     if (open) {
       generatePdf();
     } else {
-      // Clean up URLs when dialog closes
       if (pdfUrl) {
         URL.revokeObjectURL(pdfUrl);
       }
@@ -285,7 +272,6 @@ const FinalSubmissionPdf = ({
     }
   }, [open]);
 
-  // Clean up URL on unmount
   useEffect(() => {
     return () => {
       if (pdfUrl) {
@@ -345,19 +331,7 @@ const FinalSubmissionPdf = ({
         </div>
         
         <div className="p-4 border-t flex justify-end items-center">
-          {/* <div className="text-sm text-gray-600">
-            {uploadedFiles.length > 0 ? (
-              <span>Document order: Attachments (pages 1-{pdfUrl ? 'N' : '...'}) → Detailed form (final page)</span>
-            ) : (
-              <span>Single page: Detailed incident report form</span>
-            )}
-          </div> */}
           <div className="flex gap-2">
-            {/* {pdfUrl && (
-              <a href={pdfUrl} download="incident-report-combined.pdf">
-                <Button variant="outline">Download Preview</Button>
-              </a>
-            )} */}
             <Button variant="secondary" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
