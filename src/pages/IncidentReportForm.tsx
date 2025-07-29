@@ -174,8 +174,8 @@ const IncidentReportForm: React.FC = () => {
                   pageNumber: 1,
                   PDFCoordinates: [
                     {
-                      X1: "10",
-                      X2: "120",
+                      X1: "70",
+                      X2: "180",
                       Y1: "722",
                       Y2: "40",
                     },

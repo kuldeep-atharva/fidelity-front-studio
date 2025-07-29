@@ -39,9 +39,14 @@ const Admin = () => {
   const [filterRole, setFilterRole] = useState("all-roles");
   const [filterStatus, setFilterStatus] = useState("all-status");
   const [users, setUsers] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1); // Current page for pagination
+  const casesPerPage = 10; // Number of cases per page
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
 
   useEffect(() => {
     const fetchCasesAndRules = async () => {
+      setIsLoading(true);
       try {
         // Fetch cases
         const { data: casesData, error: casesError } = await supabase
@@ -59,6 +64,8 @@ const Admin = () => {
         setRules(rulesData || []);
       } catch (error) {
         console.error("Error fetching data:", error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -101,32 +108,62 @@ const Admin = () => {
     docId: string,
     refId: string
   ) => {
+    setIsCheckingStatus(true);
     console.log("filtered cases:", filteredCases);
-    const statusResponse = await axios.post(
-      `${import.meta.env.VITE_API_SC_BASE}/esign/status`,
-      {
-        documentId: docId,
-        documentReferenceId: refId,
-      },
-      {
-        headers: {
-          "X-API-KEY": `${import.meta.env.VITE_API_SC_X_KEY}`,
-          "X-API-APP-ID": `${import.meta.env.VITE_API_SC_X_ID}`,
+    try {
+      const statusResponse = await axios.post(
+        `${import.meta.env.VITE_API_SC_BASE}/esign/status`,
+        {
+          documentId: docId,
+          documentReferenceId: refId,
         },
-      }
-    );
+        {
+          headers: {
+            "X-API-KEY": `${import.meta.env.VITE_API_SC_X_KEY}`,
+            "X-API-APP-ID": `${import.meta.env.VITE_API_SC_X_ID}`,
+          },
+        }
+      );
 
-    const updatedCase = await supabase
-      .from("cases")
-      .update({ status: statusResponse.data.data.documentStatus })
-      .eq("id", id)
-      .select();
-    console.log("Updated case:", updatedCase);
-    setCases((prev) =>
-      prev.map((caseItem) =>
-        caseItem.id === updatedCase.data[0].id ? updatedCase.data[0] : caseItem
-      )
-    );
+      const responseData = statusResponse.data.data;
+
+      // Check if reviewer123 has Approved status
+      const reviewerApproved = responseData.signerInfo?.some(
+        (signer) =>
+          signer.signerRefId === "reviewer123" &&
+          signer.signerStatus === "Approved"
+      );
+
+      // Determine final status
+      let finalStatus = responseData.documentStatus;
+
+      if (finalStatus === "Pending" && reviewerApproved) {
+        finalStatus = "Reviewed";
+      }
+
+      const updatedCase = await supabase
+        .from("cases")
+        .update({ status: finalStatus })
+        .eq("id", id)
+        .select();
+      // const updatedCase = await supabase
+      // .from("cases")
+      // .update({ status: statusResponse.data.data.documentStatus })
+      // .eq("id", id)
+      // .select();
+      console.log("Updated case:", updatedCase);
+      setCases((prev) =>
+        prev.map((caseItem) =>
+          caseItem.id === updatedCase.data[0].id
+            ? updatedCase.data[0]
+            : caseItem
+        )
+      );
+    } catch (error) {
+      console.error("Error checking status:", error);
+    } finally {
+      setIsCheckingStatus(false);
+    }
   };
   const getPriorityByRuleId = (ruleId) => {
     const rule = rules.find((r) => r.id === ruleId);
@@ -155,6 +192,18 @@ const Admin = () => {
       alert("An unexpected error occurred. Please try again.");
     }
   };
+
+  // Calculate paginated cases
+  const indexOfLastCase = currentPage * casesPerPage;
+  const indexOfFirstCase = indexOfLastCase - casesPerPage;
+  const paginatedCases = filteredCases.slice(indexOfFirstCase, indexOfLastCase);
+
+  const totalPages = Math.ceil(filteredCases.length / casesPerPage);
+
+  const handlePageChange = (pageNumber: number) => {
+    setCurrentPage(pageNumber);
+  };
+
   return (
     <Layout>
       <div className="space-y-8">
@@ -185,8 +234,10 @@ const Admin = () => {
               iconBg="bg-muted-foreground"
             />
             <StatsCard
-              title="New Cases"
-              value={cases.filter((c) => c.status === "New").length.toString()}
+              title="Pending Cases"
+              value={cases
+                .filter((c) => c.status === "Pending")
+                .length.toString()}
               icon={<Clock className="w-5 h-5" />}
               iconBg="bg-destructive"
             />
@@ -199,9 +250,9 @@ const Admin = () => {
               iconBg="bg-success"
             />
             <StatsCard
-              title="Closed Cases"
+              title="Rejected Cases"
               value={cases
-                .filter((c) => c.status === "Closed")
+                .filter((c) => c.status === "Rejected")
                 .length.toString()}
               icon={<FileText className="w-5 h-5" />}
               iconBg="bg-muted-foreground"
@@ -261,112 +312,149 @@ const Admin = () => {
                   </Select>
                 </div>
 
-                <div className="border rounded-lg">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Case Number</TableHead>
-                        <TableHead>First Name</TableHead>
-                        <TableHead>Last Name</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Type of Incident</TableHead>
-                        <TableHead>Contact Email</TableHead>
-                        <TableHead>Priority</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredCases.map((caseItem, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">
-                            {caseItem.case_number}
-                          </TableCell>
-                          <TableCell>{caseItem.first_name}</TableCell>
-                          <TableCell>{caseItem.last_name}</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                caseItem.status === "New"
-                                  ? "default"
-                                  : caseItem.status === "Approved"
-                                  ? "outline"
-                                  : caseItem.status === "Rejected"
-                                  ? "destructive"
-                                  : "secondary"
-                              }
-                            >
-                              {caseItem.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{caseItem.type_of_incident}</TableCell>
-                          <TableCell>{caseItem.contact_email}</TableCell>
-                          <TableCell>
-                            {getPriorityByRuleId(caseItem.rule_applied)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  checkStatusHandler(
-                                    caseItem.id,
-                                    caseItem.signcare_doc_id,
-                                    caseItem.case_number
-                                  )
+                {isLoading ? (
+                  <div className="flex justify-center items-center h-64">
+                    <div className="custom-loader" />
+                  </div>
+                ) : (
+                  //     <div className="overflow-x-auto">
+                  //       {paginatedCases.length === 0 ? (
+                  //         <div className="text-center py-6">
+                  //           <p className="text-muted-foreground">
+                  //             No cases found.
+                  //           </p>
+                  //         </div>
+                  //       ) : null}
+                  //     </div>
+                  //   )
+                  // }
+
+                  <div className="border rounded-lg">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Case Number</TableHead>
+                          <TableHead>First Name</TableHead>
+                          <TableHead>Last Name</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Type of Incident</TableHead>
+                          <TableHead>Contact Email</TableHead>
+                          <TableHead>Priority</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedCases.map((caseItem, index) => (
+                          <TableRow key={index}>
+                            <TableCell className="font-medium">
+                              {caseItem.case_number}
+                            </TableCell>
+                            <TableCell>{caseItem.first_name}</TableCell>
+                            <TableCell>{caseItem.last_name}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  caseItem.status === "New"
+                                    ? "default"
+                                    : caseItem.status === "Approved"
+                                    ? "outline"
+                                    : caseItem.status === "Rejected"
+                                    ? "destructive"
+                                    : "secondary"
                                 }
                               >
-                                {/* <Edit className="w-4 h-4" /> */}
-                                <RefreshCcw className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={async () => {
-                                  const confirmDelete = window.confirm(
-                                    `Are you sure you want to delete case ${caseItem.case_number}?`
-                                  );
-                                  if (confirmDelete) {
-                                    try {
-                                      const { error } = await supabase
-                                        .from("cases")
-                                        .delete()
-                                        .eq("id", caseItem.id); // Use the unique `id` field to delete the case
+                                {caseItem.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{caseItem.type_of_incident}</TableCell>
+                            <TableCell>{caseItem.contact_email}</TableCell>
+                            <TableCell>
+                              {getPriorityByRuleId(caseItem.rule_applied)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                disabled={isCheckingStatus}
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    checkStatusHandler(
+                                      caseItem.id,
+                                      caseItem.signcare_doc_id,
+                                      caseItem.case_number
+                                    )
+                                  }
+                                >
+                                  <RefreshCcw className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={async () => {
+                                    const confirmDelete = window.confirm(
+                                      `Are you sure you want to delete case ${caseItem.case_number}?`
+                                    );
+                                    if (confirmDelete) {
+                                      try {
+                                        const { error } = await supabase
+                                          .from("cases")
+                                          .delete()
+                                          .eq("id", caseItem.id);
 
-                                      if (error) {
-                                        console.error(
-                                          "Error deleting case:",
-                                          error
-                                        );
+                                        if (error) {
+                                          console.error(
+                                            "Error deleting case:",
+                                            error
+                                          );
+                                          alert(
+                                            "Failed to delete the case. Please try again."
+                                          );
+                                        } else {
+                                          setCases((prevCases) =>
+                                            prevCases.filter(
+                                              (c) => c.id !== caseItem.id
+                                            )
+                                          );
+                                        }
+                                      } catch (err) {
+                                        console.error("Unexpected error:", err);
                                         alert(
-                                          "Failed to delete the case. Please try again."
-                                        );
-                                      } else {
-                                        // alert("Case deleted successfully!");
-                                        // Remove the deleted case from the local state
-                                        setCases((prevCases) =>
-                                          prevCases.filter(
-                                            (c) => c.id !== caseItem.id
-                                          )
+                                          "An unexpected error occurred. Please try again."
                                         );
                                       }
-                                    } catch (err) {
-                                      console.error("Unexpected error:", err);
-                                      alert(
-                                        "An unexpected error occurred. Please try again."
-                                      );
                                     }
-                                  }
-                                }}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                                  }}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {/* Pagination Controls */}
+                <div className="flex justify-between items-center mt-4">
+                  <Button
+                    variant="outline"
+                    disabled={currentPage === 1}
+                    onClick={() => handlePageChange(currentPage - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <span>
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={currentPage === totalPages}
+                    onClick={() => handlePageChange(currentPage + 1)}
+                  >
+                    Next
+                  </Button>
                 </div>
               </div>
             </TabsContent>

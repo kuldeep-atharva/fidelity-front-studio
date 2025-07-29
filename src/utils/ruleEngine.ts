@@ -53,27 +53,27 @@ Thank you for your precision—this accuracy is vital for the user’s confidenc
   try {
     const result = JSON.parse(response);
     console.log('OpenAI Response:', response); // Debug log
-    const matchedRule = trimmedRules.find((r) => r.id === result.rule_id);
-    if (!matchedRule) {
-      console.warn('No valid rule found, falling back to type-based match');
-      const fallback = trimmedRules.find((r) => r.type_of_incident === caseDetails.type_of_incident) || trimmedRules[0];
-      return {
-        rule_id: fallback.id,
-        priority: fallback.priority,
-        signer_email: fallback.signer_email,
-        reviewer_email: fallback.reviewer_email,
-      };
-    }
-    if (matchedRule.type_of_incident !== caseDetails.type_of_incident) {
-      console.warn('Type mismatch detected, overriding with type-based match');
-      const fallback = trimmedRules.find((r) => r.type_of_incident === caseDetails.type_of_incident) || trimmedRules[0];
-      return {
-        rule_id: fallback.id,
-        priority: fallback.priority,
-        signer_email: fallback.signer_email,
-        reviewer_email: fallback.reviewer_email,
-      };
-    }
+    // const matchedRule = trimmedRules.find((r) => r.id === result.rule_id);
+    // if (!matchedRule) {
+    //   console.warn('No valid rule found, falling back to type-based match');
+    //   const fallback = trimmedRules.find((r) => r.type_of_incident === caseDetails.type_of_incident) || trimmedRules[0];
+    //   return {
+    //     rule_id: fallback.id,
+    //     priority: fallback.priority,
+    //     signer_email: fallback.signer_email,
+    //     reviewer_email: fallback.reviewer_email,
+    //   };
+    // }
+    // if (matchedRule.type_of_incident !== caseDetails.type_of_incident) {
+    //   console.warn('Type mismatch detected, overriding with type-based match');
+    //   const fallback = trimmedRules.find((r) => r.type_of_incident === caseDetails.type_of_incident) || trimmedRules[0];
+    //   return {
+    //     rule_id: fallback.id,
+    //     priority: fallback.priority,
+    //     signer_email: fallback.signer_email,
+    //     reviewer_email: fallback.reviewer_email,
+    //   };
+    // }
     return result;
   } catch (e) {
     console.error('JSON parsing error:', e);
