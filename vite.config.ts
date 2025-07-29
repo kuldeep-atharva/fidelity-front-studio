@@ -15,6 +15,18 @@ export default defineConfig(({ mode }) => ({
     componentTagger(),
   ].filter(Boolean),
   base: '/',
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          router: ['react-router-dom'],
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
