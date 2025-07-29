@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, Circle, Clock, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import ChatModal from "@/components/ChatModal";
+import { useState } from "react";
 
 const wayfinderSteps = [
   {
@@ -49,6 +51,7 @@ const wayfinderSteps = [
 ];
 
 const Wayfinder = () => {
+  const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const stepHandler = (stepId) => {
     if (stepId === 1) {
@@ -153,7 +156,7 @@ const Wayfinder = () => {
                             Start Step
                             <ArrowRight className="w-4 h-4 ml-2" />
                           </Button>
-                          <Button variant="outline">Get Help</Button>
+                          <Button variant="outline" onClick={() => setIsOpen(true)}>Get Help</Button>
                         </div>
                       </div>
                     )}
@@ -164,6 +167,7 @@ const Wayfinder = () => {
           ))}
         </div>
       </div>
+      <ChatModal open={isOpen} onOpenChange={setIsOpen} />
     </Layout>
   );
 };

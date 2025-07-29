@@ -38,6 +38,7 @@ const Admin = () => {
   const [rules, setRules] = useState([]); // Rules from the database
   const [filterRole, setFilterRole] = useState("all-roles");
   const [filterStatus, setFilterStatus] = useState("all-status");
+  const [users, setUsers] = useState([]);
 
   useEffect(() => {
     const fetchCasesAndRules = async () => {
@@ -62,6 +63,24 @@ const Admin = () => {
     };
 
     fetchCasesAndRules();
+  }, []);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        // Fetch users
+        const { data: usersData, error: usersError } = await supabase
+          .from("users")
+          .select("*");
+        if (usersError) throw usersError;
+
+        setUsers(usersData || []);
+      } catch (error) {
+        console.error("Error fetching users:", error);
+      }
+    };
+
+    fetchUsers();
   }, []);
 
   const filteredCases = cases
@@ -113,6 +132,29 @@ const Admin = () => {
     const rule = rules.find((r) => r.id === ruleId);
     return rule ? rule.priority : "N/A"; // Return "N/A" if no matching rule is found
   };
+  const handleRoleChange = async (userId, newRole) => {
+    try {
+      const { error } = await supabase
+        .from("users")
+        .update({ role: newRole })
+        .eq("id", userId);
+
+      if (error) {
+        console.error("Error updating role:", error);
+        alert("Failed to update the role. Please try again.");
+      } else {
+        alert("Role updated successfully!");
+        setUsers((prevUsers) =>
+          prevUsers.map((user) =>
+            user.id === userId ? { ...user, role: newRole } : user
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Unexpected error:", err);
+      alert("An unexpected error occurred. Please try again.");
+    }
+  };
   return (
     <Layout>
       <div className="space-y-8">
@@ -151,7 +193,7 @@ const Admin = () => {
             <StatsCard
               title="Approved Cases"
               value={cases
-                .filter((c) => c.status === "Approved")
+                .filter((c) => c.status === "Signed")
                 .length.toString()}
               icon={<UserCheck className="w-5 h-5" />}
               iconBg="bg-success"
@@ -169,7 +211,7 @@ const Admin = () => {
           <Tabs defaultValue="cases" className="space-y-6">
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="cases">Case Management</TabsTrigger>
-              <TabsTrigger value="content">Content Management</TabsTrigger>
+              <TabsTrigger value="content">User Management</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
               <TabsTrigger value="settings">System Settings</TabsTrigger>
             </TabsList>
@@ -329,14 +371,110 @@ const Admin = () => {
               </div>
             </TabsContent>
 
-            <TabsContent value="content">
-              <div className="text-center py-12">
-                <h3 className="text-lg font-semibold mb-2">
-                  Content Management
-                </h3>
-                <p className="text-muted-foreground">
-                  Content management features coming soon.
-                </p>
+            <TabsContent value="content" className="space-y-6">
+              <div>
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">
+                      User Management
+                    </h3>
+                    <p className="text-muted-foreground text-sm mb-6">
+                      Manage users and their roles
+                    </p>
+                  </div>
+
+                  <div className="border rounded-lg">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Full Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead>Created At</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {users.map((user, index) => (
+                          <TableRow key={index}>
+                            <TableCell className="font-medium">
+                              {user.full_name}
+                            </TableCell>
+                            <TableCell>{user.email}</TableCell>
+                            <TableCell>
+                              <Select
+                                defaultValue={user.role}
+                                onValueChange={(newRole) =>
+                                  handleRoleChange(user.id, newRole)
+                                }
+                              >
+                                <SelectTrigger className="w-40">
+                                  <SelectValue placeholder={user.role} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Reviewer">
+                                    Reviewer
+                                  </SelectItem>
+                                  <SelectItem value="Signer">Signer</SelectItem>
+                                  <SelectItem value="Approver">
+                                    Approver
+                                  </SelectItem>
+                                  <SelectItem value="Admin">Admin</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell>
+                              {new Date(user.created_at).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={async () => {
+                                  const confirmDelete = window.confirm(
+                                    `Are you sure you want to delete user ${user.full_name}?`
+                                  );
+                                  if (confirmDelete) {
+                                    try {
+                                      const { error } = await supabase
+                                        .from("users")
+                                        .delete()
+                                        .eq("id", user.id);
+
+                                      if (error) {
+                                        console.error(
+                                          "Error deleting user:",
+                                          error
+                                        );
+                                        alert(
+                                          "Failed to delete the user. Please try again."
+                                        );
+                                      } else {
+                                        alert("User deleted successfully!");
+                                        setUsers((prevUsers) =>
+                                          prevUsers.filter(
+                                            (u) => u.id !== user.id
+                                          )
+                                        );
+                                      }
+                                    } catch (err) {
+                                      console.error("Unexpected error:", err);
+                                      alert(
+                                        "An unexpected error occurred. Please try again."
+                                      );
+                                    }
+                                  }
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
               </div>
             </TabsContent>
 
