@@ -11,6 +11,7 @@ import Admin from "./pages/Admin";
 import Rules from "./pages/Rules";
 import NotFound from "./pages/NotFound";
 import IncidentReportForm from "./pages/IncidentReportForm";
+import "./App.css";
 
 const queryClient = new QueryClient();
 
