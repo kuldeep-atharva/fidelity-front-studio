@@ -53,9 +53,21 @@ const Rules = () => {
   }, []);
 
   const toggleStatus = async (id: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'active' ? 'testing' : 'active';
-    await supabase.from('rules').update({ status: newStatus }).eq('id', id);
-    fetchRules();
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    try {
+      const { error } = await supabase.from('rules').update({ status: newStatus }).eq('id', id);
+      if (error) throw error;
+
+      // Update the status in the local state without re-fetching
+      setRules((prevRules) =>
+        prevRules.map((rule) =>
+          rule.id === id ? { ...rule, status: newStatus } : rule
+        )
+      );
+    } catch (err) {
+      console.error('Error updating rule status:', err);
+      alert('Failed to update rule status. Please try again.');
+    }
   };
 
   const deleteRule = async (id: string) => {
@@ -100,7 +112,7 @@ const Rules = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatsCard title="Total Rules" value={rules.length.toString()} icon={<Settings className="w-5 h-5" />} iconBg="bg-muted-foreground" />
             <StatsCard title="Active Rules" value={rules.filter((r) => r.status === 'active').length.toString()} icon={<Shield className="w-5 h-5" />} iconBg="bg-success" />
-            <StatsCard title="Testing" value={rules.filter((r) => r.status === 'testing').length.toString()} icon={<Clock className="w-5 h-5" />} iconBg="bg-destructive" />
+            <StatsCard title="Inactive Rules" value={rules.filter((r) => r.status === 'inactive').length.toString()} icon={<Clock className="w-5 h-5" />} iconBg="bg-destructive" />
             <StatsCard title="Configurations" value={rules.length.toString()} icon={<Database className="w-5 h-5" />} iconBg="bg-muted-foreground" />
           </div>
 
@@ -163,19 +175,36 @@ const Rules = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Badge variant={rule.status === 'active' ? 'default' : 'secondary'}>{rule.status}</Badge>
-                        <Switch checked={rule.status === 'active'} onCheckedChange={() => toggleStatus(rule.id, rule.status)} />
+                        <Badge variant={rule.status === 'active' ? 'default' : 'secondary'}>
+                          {rule.status}
+                        </Badge>
+                        <Switch
+                          checked={rule.status === 'active'}
+                          onCheckedChange={() => toggleStatus(rule.id, rule.status)}
+                        />
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={rule.priority === 'high' ? 'destructive' : 'outline'} className={rule.priority === 'medium' ? 'bg-primary text-primary-foreground' : ''}>{rule.priority}</Badge>
+                      <Badge
+                        variant={rule.priority === 'high' ? 'destructive' : 'outline'}
+                        className={rule.priority === 'medium' ? 'bg-primary text-primary-foreground' : ''}
+                      >
+                        {rule.priority}
+                      </Badge>
                     </TableCell>
                     {/* <TableCell>{rule.condition}</TableCell> */}
                     <TableCell>{rule.signer_email}</TableCell>
                     <TableCell>{rule.reviewer_email}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => { setEditRule(rule); setModalOpen(true); }}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditRule(rule);
+                            setModalOpen(true);
+                          }}
+                        >
                           <Edit className="w-4 h-4" />
                         </Button>
                         <Button variant="ghost" size="sm" onClick={() => deleteRule(rule.id)}>

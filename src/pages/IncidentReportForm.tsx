@@ -18,6 +18,7 @@ const IncidentReportForm: React.FC = () => {
     type_of_incident: "",
     contact_phone: "",
     contact_email: "",
+    case_description: "",
     case_number: "",
     signer_email: "",
     reviewer_email: "",
@@ -40,7 +41,9 @@ const IncidentReportForm: React.FC = () => {
   const navigate = useNavigate();
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >
   ) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -72,7 +75,12 @@ const IncidentReportForm: React.FC = () => {
   const generateCaseNumber = () =>
     `SF-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-  const initializeWorkflowSteps = async (caseId: string, reviewerEmail: string, signerEmail: string, signcareDocId: string) => {
+  const initializeWorkflowSteps = async (
+    caseId: string,
+    reviewerEmail: string,
+    signerEmail: string,
+    signcareDocId: string
+  ) => {
     const workflowSteps = [
       {
         step_order: 1,
@@ -126,10 +134,16 @@ const IncidentReportForm: React.FC = () => {
         is_active: true,
         action_type: "Review",
         action_status: "Pending",
-        tasks: JSON.stringify(["Reviewer checks document accuracy", "Approve or reject submission"]),
+        tasks: JSON.stringify([
+          "Reviewer checks document accuracy",
+          "Approve or reject submission",
+        ]),
         step_category: "External Action",
         is_required: true,
-        action_metadata: { reviewer_email: reviewerEmail, signcare_doc_id: signcareDocId },
+        action_metadata: {
+          reviewer_email: reviewerEmail,
+          signcare_doc_id: signcareDocId,
+        },
       },
       {
         step_order: 4,
@@ -139,10 +153,16 @@ const IncidentReportForm: React.FC = () => {
         is_active: false,
         action_type: "Sign",
         action_status: "Pending",
-        tasks: JSON.stringify(["Signer reviews document", "Provide electronic signature"]),
+        tasks: JSON.stringify([
+          "Signer reviews document",
+          "Provide electronic signature",
+        ]),
         step_category: "External Action",
         is_required: true,
-        action_metadata: { signer_email: signerEmail, signcare_doc_id: signcareDocId },
+        action_metadata: {
+          signer_email: signerEmail,
+          signcare_doc_id: signcareDocId,
+        },
       },
       {
         step_order: 5,
@@ -152,7 +172,10 @@ const IncidentReportForm: React.FC = () => {
         is_active: false,
         action_type: "Approve",
         action_status: "Pending",
-        tasks: JSON.stringify(["Prepare final submission", "File with court system"]),
+        tasks: JSON.stringify([
+          "Prepare final submission",
+          "File with court system",
+        ]),
         step_category: "System Action",
         is_required: true,
       },
@@ -183,12 +206,16 @@ const IncidentReportForm: React.FC = () => {
         .select("id")
         .single();
 
-      if (error) throw new Error(`Failed to insert step ${step.step_name}: ${error.message}`);
+      if (error)
+        throw new Error(
+          `Failed to insert step ${step.step_name}: ${error.message}`
+        );
       previousStepId = data.id;
     }
   };
 
-  const handleFinalSubmit = async (pdfBase64: string) => {
+  const handleFinalSubmit = async (pdfBase64: string, pageNum: number) => {
+    console.log("Page Number for Signature:", pageNum);
     setSubmitting(true);
     try {
       const generatedCaseNumberVal = generateCaseNumber();
@@ -200,6 +227,7 @@ const IncidentReportForm: React.FC = () => {
         type_of_incident: form.type_of_incident,
         contact_phone: form.contact_phone,
         contact_email: form.contact_email,
+        case_description: form.case_description,
         case_number: generatedCaseNumberVal,
         pdf_url: pdfBase64,
         signer_email: form.signer_email,
@@ -213,23 +241,29 @@ const IncidentReportForm: React.FC = () => {
         contact_email: newCase.contact_email,
       };
       const { data: rules, error: rulesError } = await supabase
-        .from('rules')
-        .select('*')
-        .eq('status', 'active');
-      if (rulesError || !rules) throw new Error('Failed to fetch rules');
+        .from("rules")
+        .select("*")
+        .eq("status", "active");
+      if (rulesError || !rules) throw new Error("Failed to fetch rules");
 
       const ruleMatch = await matchRuleUsingOpenAI(summaryCase, rules);
       const updatedCase = {
         ...newCase,
-        signer_email: ruleMatch.signer_email || newCase.signer_email || newCase.contact_email,
-        reviewer_email: ruleMatch.reviewer_email || newCase.reviewer_email || "defaultreviewer@yopmail.com",
+        signer_email:
+          ruleMatch.signer_email ||
+          newCase.signer_email ||
+          newCase.contact_email,
+        reviewer_email:
+          ruleMatch.reviewer_email ||
+          newCase.reviewer_email ||
+          "defaultreviewer@yopmail.com",
         rule_applied: ruleMatch.rule_id || newCase.rule_applied,
       };
 
       const { data: caseData, error: insertError } = await supabase
-        .from('cases')
+        .from("cases")
         .insert([updatedCase])
-        .select('id')
+        .select("id")
         .single();
       if (insertError) throw insertError;
 
@@ -307,10 +341,10 @@ const IncidentReportForm: React.FC = () => {
               pageNumber: null,
               pageCoordinates: [
                 {
-                  pageNumber: 1,
+                  pageNumber: pageNum,
                   PDFCoordinates: [
                     {
-                      X1: "70",
+                      X1: "360",
                       X2: "180",
                       Y1: "682",
                       Y2: "40",
@@ -342,7 +376,12 @@ const IncidentReportForm: React.FC = () => {
         .update({ signcare_doc_id: signcareDocId })
         .eq("id", caseId);
 
-      await initializeWorkflowSteps(caseId, updatedCase.reviewer_email, updatedCase.signer_email, signcareDocId);
+      await initializeWorkflowSteps(
+        caseId,
+        updatedCase.reviewer_email,
+        updatedCase.signer_email,
+        signcareDocId
+      );
 
       // Fetch initial status from SignCare
       const statusResponse = await axios.post(
@@ -362,8 +401,12 @@ const IncidentReportForm: React.FC = () => {
       if (statusResponse.status === 200 && statusResponse.data.success) {
         const { documentStatus, signerInfo } = statusResponse.data.data;
 
-        const reviewer = signerInfo.find((s: any) => s.signerRefId === reviewerUser.id);
-        const signer = signerInfo.find((s: any) => s.signerRefId === signerUser.id);
+        const reviewer = signerInfo.find(
+          (s: any) => s.signerRefId === reviewerUser.id
+        );
+        const signer = signerInfo.find(
+          (s: any) => s.signerRefId === signerUser.id
+        );
 
         const reviewStep = await supabase
           .from("case_workflow_steps")
@@ -375,10 +418,17 @@ const IncidentReportForm: React.FC = () => {
           await supabase
             .from("case_workflow_steps")
             .update({
-              action_status: reviewer.signerStatus === "Approved" ? "Completed" :
-                            reviewer.signerStatus === "Rejected" ? "Rejected" : "Pending",
+              action_status:
+                reviewer.signerStatus === "Approved"
+                  ? "Completed"
+                  : reviewer.signerStatus === "Rejected"
+                  ? "Rejected"
+                  : "Pending",
               action_timestamp: new Date().toISOString(),
-              failure_reason: reviewer.signerStatus === "Rejected" ? reviewer.rejectReason || "Reviewer rejected the document" : null,
+              failure_reason:
+                reviewer.signerStatus === "Rejected"
+                  ? reviewer.rejectReason || "Reviewer rejected the document"
+                  : null,
               action_metadata: {
                 ...reviewStep.data.action_metadata,
                 signer_id: reviewer.signerId,
@@ -399,10 +449,17 @@ const IncidentReportForm: React.FC = () => {
           await supabase
             .from("case_workflow_steps")
             .update({
-              action_status: signer.signerStatus === "Signed" ? "Completed" :
-                            signer.signerStatus === "Rejected" ? "Rejected" : "Pending",
+              action_status:
+                signer.signerStatus === "Signed"
+                  ? "Completed"
+                  : signer.signerStatus === "Rejected"
+                  ? "Rejected"
+                  : "Pending",
               action_timestamp: new Date().toISOString(),
-              failure_reason: signer.signerStatus === "Rejected" ? signer.rejectReason || "Signer rejected the document" : null,
+              failure_reason:
+                signer.signerStatus === "Rejected"
+                  ? signer.rejectReason || "Signer rejected the document"
+                  : null,
               action_metadata: {
                 ...signStep.data.action_metadata,
                 signer_id: signer.signerId,
@@ -433,9 +490,14 @@ const IncidentReportForm: React.FC = () => {
         await supabase
           .from("cases")
           .update({
-            status: documentStatus === "Signed" ? "Completed" :
-                    documentStatus === "Rejected" ? "Rejected" :
-                    documentStatus === "Pending" ? "In Progress" : "New",
+            status:
+              documentStatus === "Signed"
+                ? "Completed"
+                : documentStatus === "Rejected"
+                ? "Rejected"
+                : documentStatus === "Pending"
+                ? "In Progress"
+                : "New",
           })
           .eq("id", caseId);
       }
@@ -451,6 +513,7 @@ const IncidentReportForm: React.FC = () => {
         type_of_incident: "",
         contact_phone: "",
         contact_email: "",
+        case_description: "",
         case_number: "",
         signer_email: "",
         reviewer_email: "",
@@ -565,6 +628,20 @@ const IncidentReportForm: React.FC = () => {
                 </select>
               </div>
             </div>
+            <div className="grid mt-6">
+              <label className="block text-sm mb-1 font-medium">
+                Description*
+              </label>
+              <textarea
+                placeholder="Describe the incident in detail"
+                name="case_description"
+                value={form.case_description}
+                onChange={handleChange}
+                className="w-full p-2 rounded bg-purple-100 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
+                rows={4}
+                required
+              />
+            </div>
 
             {validationError && (
               <p className="text-red-600 text-sm mt-4">{validationError}</p>
@@ -575,9 +652,9 @@ const IncidentReportForm: React.FC = () => {
                 Cancel
               </Button>
               <div className="flex space-x-3">
-                <Button variant="outline" onClick={() => setIsChatOpen(true)}>
+                {/* <Button variant="outline" onClick={() => setIsChatOpen(true)}>
                   Get Help
-                </Button>
+                </Button> */}
                 <Button
                   onClick={handleStep2}
                   className="bg-sky-600 hover:bg-sky-700"
@@ -743,10 +820,7 @@ const IncidentReportForm: React.FC = () => {
                 <Button variant="outline" onClick={() => setIsChatOpen(true)}>
                   Get Help
                 </Button>
-                <Button
-                  onClick={validateAndPreview}
-                  disabled={submitting}
-                >
+                <Button onClick={validateAndPreview} disabled={submitting}>
                   {submitting ? "Submitting..." : "Review & Submit"}
                 </Button>
               </div>
@@ -759,9 +833,9 @@ const IncidentReportForm: React.FC = () => {
           onOpenChange={setPdfOpen}
           formData={formData}
           uploadedFiles={uploadedFiles}
-          onConfirm={async (pdfBase64) => {
+          onConfirm={async (pdfBase64, pageNum) => {
             setPdfOpen(false);
-            await handleFinalSubmit(pdfBase64);
+            await handleFinalSubmit(pdfBase64, pageNum);
           }}
         />
 
@@ -773,8 +847,9 @@ const IncidentReportForm: React.FC = () => {
                 Report Submitted Successfully
               </Dialog.Title>
               <Dialog.Description className="text-gray-600 mb-6">
-                Your incident report (<strong>{localStorage.getItem("case_number")}</strong>) has been received by the Superior Court of
-                San Francisco County.
+                Your incident report (
+                <strong>{localStorage.getItem("case_number")}</strong>) has been
+                received by the Superior Court of San Francisco County.
               </Dialog.Description>
               <div className="flex justify-end">
                 <Dialog.Close asChild>

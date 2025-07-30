@@ -13,7 +13,7 @@ interface FinalSubmissionPdfProps {
   onOpenChange: (open: boolean) => void;
   formData: { [key: string]: string };
   uploadedFiles: File[];
-  onConfirm?: (pdfBase64: string) => void;
+  onConfirm?: (pdfBase64: string, pageNum: number) => void;
 }
 
 const SEAL_IMAGE_URL = "/US_DC_NorCal.png"; // Replace if needed
@@ -30,6 +30,7 @@ const FinalSubmissionPdf = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [pdfDocPages, setPdfDocPages] = useState<number | null>(null);
 
   const readFileAsArrayBuffer = (file: File): Promise<ArrayBuffer> =>
     new Promise((resolve, reject) => {
@@ -238,7 +239,7 @@ const FinalSubmissionPdf = ({
           color: rgb(0.5, 0.5, 0.5),
         });
       }
-
+      setPdfDocPages(totalPages)
       const bytes = await pdfDoc.save();
       const blob = new Blob([bytes], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
@@ -337,7 +338,7 @@ const FinalSubmissionPdf = ({
             </Button>
             <Button
               disabled={!pdfBase64 || isGenerating}
-              onClick={() => pdfBase64 && onConfirm?.(pdfBase64)}
+              onClick={() => pdfBase64 && onConfirm?.(pdfBase64, pdfDocPages)}
             >
               Confirm & Submit
             </Button>
