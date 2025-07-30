@@ -145,6 +145,7 @@ const FinalSubmissionPdf = ({
       drawLabel("Email", safe("contact_email"));
       drawLabel("Incident Type", safe("type_of_incident"));
       drawLabel("Incident Date", safe("date_of_incident"));
+      drawLabel("Case Description", safe("case_description"));
 
       if (uploadedFiles.length > 0) {
         y -= 30;
@@ -173,7 +174,8 @@ const FinalSubmissionPdf = ({
 
       formPage.drawText("SUBMISSION DETAILS:", { x: 72, y, size: 12, font });
       y -= 20;
-      formPage.drawText(`Submitted on: ${new Date('2025-07-29T13:46:00+05:30').toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`, { x: 90, y, size: 10, font });
+      formPage.drawText(`Submitted on: ${new Date().toUTCString()}`, { x: 90, y, size: 10, font });
+      // formPage.drawText(`Submitted on: ${new Date('2025-07-31T13:46:00+05:30').toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`, { x: 90, y, size: 10, font });
       y -= 16;
       formPage.drawText(`Total Pages: ${pdfDoc.getPageCount()}`, { x: 90, y, size: 10, font });
       y -= 16;
