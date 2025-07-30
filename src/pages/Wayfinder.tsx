@@ -195,23 +195,42 @@ const Wayfinder = () => {
         if (error) throw error;
 
         setWorkflowSteps(
-          data.map((step) => ({
-            id: step.id,
-            title: step.step_name,
-            description: step.description,
-            status:
-              step.action_status === "Completed"
-                ? "completed"
-                : step.action_status === "Rejected"
-                ? "rejected"
-                : step.is_active
-                ? "current"
-                : "upcoming",
-            duration: step.estimated_duration,
-            tasks: JSON.parse(step.tasks || "[]"),
-            action_metadata: step.action_metadata || {},
-            failure_reason: step.failure_reason,
-          }))
+          data.map((step, index) => {
+            // Enforce that "Court Filing" (step 5) remains "upcoming" if "Sign Process" is completed
+            if (step.step_name === "Court Filing" && index === 4) {
+              const signProcessStep = data.find(s => s.step_name === "Sign Process");
+              if (signProcessStep && signProcessStep.action_status === "Completed") {
+                return {
+                  id: step.id,
+                  title: step.step_name,
+                  description: step.description,
+                  status: "current", // Force "upcoming" status for Court Filing
+                  duration: step.estimated_duration,
+                  tasks: JSON.parse(step.tasks || "[]"),
+                  action_metadata: step.action_metadata || {},
+                  failure_reason: step.failure_reason,
+                };
+              }
+            }
+
+            return {
+              id: step.id,
+              title: step.step_name,
+              description: step.description,
+              status:
+                step.action_status === "Completed"
+                  ? "completed"
+                  : step.action_status === "Rejected"
+                  ? "rejected"
+                  : step.is_active
+                  ? "current"
+                  : "upcoming",
+              duration: step.estimated_duration,
+              tasks: JSON.parse(step.tasks || "[]"),
+              action_metadata: step.action_metadata || {},
+              failure_reason: step.failure_reason,
+            };
+          })
         );
       } catch (error) {
         console.error("Failed to fetch workflow steps:", error);
@@ -242,23 +261,42 @@ const Wayfinder = () => {
       if (error) throw error;
 
       setWorkflowSteps(
-        data.map((step) => ({
-          id: step.id,
-          title: step.step_name,
-          description: step.description,
-          status:
-            step.action_status === "Completed"
-              ? "completed"
-              : step.action_status === "Rejected"
-              ? "rejected"
-              : step.is_active
-              ? "current"
-              : "upcoming",
-          duration: step.estimated_duration,
-          tasks: JSON.parse(step.tasks || "[]"),
-          action_metadata: step.action_metadata || {},
-          failure_reason: step.failure_reason,
-        }))
+        data.map((step, index) => {
+          // Enforce that "Court Filing" (step 5) remains "upcoming" if "Sign Process" is completed
+          if (step.step_name === "Court Filing" && index === 4) {
+            const signProcessStep = data.find(s => s.step_name === "Sign Process");
+            if (signProcessStep && signProcessStep.action_status === "Completed") {
+              return {
+                id: step.id,
+                title: step.step_name,
+                description: step.description,
+                status: "current", // Force "upcoming" status for Court Filing
+                duration: step.estimated_duration,
+                tasks: JSON.parse(step.tasks || "[]"),
+                action_metadata: step.action_metadata || {},
+                failure_reason: step.failure_reason,
+              };
+            }
+          }
+
+          return {
+            id: step.id,
+            title: step.step_name,
+            description: step.description,
+            status:
+              step.action_status === "Completed"
+                ? "completed"
+                : step.action_status === "Rejected"
+                ? "rejected"
+                : step.is_active
+                ? "current"
+                : "upcoming",
+            duration: step.estimated_duration,
+            tasks: JSON.parse(step.tasks || "[]"),
+            action_metadata: step.action_metadata || {},
+            failure_reason: step.failure_reason,
+          };
+        })
       );
 
       const { data: caseData } = await supabase

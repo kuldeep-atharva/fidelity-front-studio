@@ -639,7 +639,6 @@ const IncidentReportForm: React.FC = () => {
                 onChange={handleChange}
                 className="w-full p-2 rounded bg-purple-100 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
                 rows={4}
-                required
               />
             </div>
 
@@ -817,9 +816,9 @@ const IncidentReportForm: React.FC = () => {
                 ← Back
               </Button>
               <div className="flex space-x-3">
-                <Button variant="outline" onClick={() => setIsChatOpen(true)}>
+                {/* <Button variant="outline" onClick={() => setIsChatOpen(true)}>
                   Get Help
-                </Button>
+                </Button> */}
                 <Button onClick={validateAndPreview} disabled={submitting}>
                   {submitting ? "Submitting..." : "Review & Submit"}
                 </Button>
