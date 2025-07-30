@@ -241,8 +241,8 @@ const Wayfinder = () => {
     };
 
     fetchWorkflowSteps();
-    const interval = setInterval(fetchWorkflowSteps, 30000);
-    return () => clearInterval(interval);
+    // const interval = setInterval(fetchWorkflowSteps, 30000);
+    // return () => clearInterval(interval);
   }, [selectedCaseId, selectedCaseNumber]);
 
   const handleRefresh = async () => {
