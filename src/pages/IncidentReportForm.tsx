@@ -239,6 +239,7 @@ const IncidentReportForm: React.FC = () => {
         type_of_incident: newCase.type_of_incident,
         date_of_incident: newCase.date_of_incident,
         contact_email: newCase.contact_email,
+        case_description: newCase.case_description
       };
       const { data: rules, error: rulesError } = await supabase
         .from("rules")
