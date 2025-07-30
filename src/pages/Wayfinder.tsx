@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,23 +19,22 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import ChatModal from "@/components/ChatModal";
 import { supabase } from "@/utils/supabaseClient";
 import { updateWorkflowStatus } from "@/utils/workflowUpdater";
 
 const Wayfinder = () => {
+  const { caseId } = useParams();
   const [isOpen, setIsOpen] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<any[]>([]);
   const [cases, setCases] = useState<any[]>([]);
-  const [selectedCaseNumber, setSelectedCaseNumber] = useState<string | null>(
-    localStorage.getItem("case_number") || null
-  );
+  const [selectedCaseNumber, setSelectedCaseNumber] = useState<string | null>(null);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [caseStatus, setCaseStatus] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  // Default workflow steps when no cases are available
+  // Default workflow steps
   const defaultWorkflowSteps = [
     {
       id: "default-1",
@@ -60,18 +60,18 @@ const Wayfinder = () => {
       action_metadata: {},
       failure_reason: null,
     },
+    // {
+    //   id: "default-3",
+    //   title: "Rule Matching",
+    //   description: "Match the case with applicable legal rules and regulations.",
+    //   status: "upcoming",
+    //   duration: "1-2 days",
+    //   tasks: [],
+    //   action_metadata: {},
+    //   failure_reason: null,
+    // },
     {
       id: "default-3",
-      title: "Rule Matching",
-      description: "Match the case with applicable legal rules and regulations.",
-      status: "upcoming",
-      duration: "1-2 days",
-      tasks: [],
-      action_metadata: {},
-      failure_reason: null,
-    },
-    {
-      id: "default-4",
       title: "Review Process",
       description: "The case is reviewed by an assigned reviewer.",
       status: "upcoming",
@@ -81,7 +81,7 @@ const Wayfinder = () => {
       failure_reason: null,
     },
     {
-      id: "default-5",
+      id: "default-4",
       title: "Sign Process",
       description: "The case documents are sent for signing.",
       status: "upcoming",
@@ -91,7 +91,7 @@ const Wayfinder = () => {
       failure_reason: null,
     },
     {
-      id: "default-6",
+      id: "default-5",
       title: "Court Filing",
       description: "The finalized documents are filed with the court.",
       status: "upcoming",
@@ -114,25 +114,41 @@ const Wayfinder = () => {
         if (error) throw error;
         setCases(data || []);
 
+        // Initialize with "Select none" by default
+        setSelectedCaseNumber(null);
+        setSelectedCaseId(null);
+        setWorkflowSteps(defaultWorkflowSteps);
+        setCaseStatus(null);
+        localStorage.removeItem("case_number");
+
         if (data && data.length > 0) {
-          // Select the latest case (first in the ordered list)
-          const latestCase = data[0];
-          if (!selectedCaseNumber || !data.some((c) => c.case_number === selectedCaseNumber)) {
-            setSelectedCaseNumber(latestCase.case_number);
-            localStorage.setItem("case_number", latestCase.case_number);
+          // If caseId is provided in URL, find and select that case
+          if (caseId) {
+            const caseFromUrl = data.find(c => c.id === caseId);
+            if (caseFromUrl) {
+              setSelectedCaseNumber(caseFromUrl.case_number);
+              setSelectedCaseId(caseFromUrl.id);
+              localStorage.setItem("case_number", caseFromUrl.case_number);
+              return;
+            }
           }
-        } else {
-          // No cases available, set default workflow steps
-          setWorkflowSteps(defaultWorkflowSteps);
-          setCaseStatus(null);
-          setSelectedCaseNumber(null);
-          localStorage.removeItem("case_number");
+
+          // Check for case in localStorage
+          const storedCaseNumber = localStorage.getItem("case_number");
+          if (storedCaseNumber && data.some(c => c.case_number === storedCaseNumber)) {
+            const storedCase = data.find(c => c.case_number === storedCaseNumber);
+            if (storedCase) {
+              setSelectedCaseNumber(storedCaseNumber);
+              setSelectedCaseId(storedCase.id);
+            }
+          }
         }
       } catch (error) {
         console.error("Failed to fetch cases:", error);
-        setWorkflowSteps(defaultWorkflowSteps); // Fallback to default steps on error
+        setWorkflowSteps(defaultWorkflowSteps);
         setCaseStatus(null);
         setSelectedCaseNumber(null);
+        setSelectedCaseId(null);
         localStorage.removeItem("case_number");
       } finally {
         setLoading(false);
@@ -140,13 +156,13 @@ const Wayfinder = () => {
     };
 
     fetchCases();
-  }, []);
+  }, [caseId]);
 
-  // Fetch workflow steps and case status for the selected case
+  // Fetch workflow steps for selected case
   useEffect(() => {
     const fetchWorkflowSteps = async () => {
-      if (cases.length === 0 || !selectedCaseNumber) {
-        setWorkflowSteps(defaultWorkflowSteps); // Always show default steps when no cases
+      if (!selectedCaseId) {
+        setWorkflowSteps(defaultWorkflowSteps);
         setCaseStatus(null);
         setLoading(false);
         return;
@@ -157,7 +173,7 @@ const Wayfinder = () => {
         const { data: caseData, error: caseError } = await supabase
           .from("cases")
           .select("id, status")
-          .eq("case_number", selectedCaseNumber)
+          .eq("id", selectedCaseId)
           .single();
 
         if (caseError || !caseData) {
@@ -166,14 +182,14 @@ const Wayfinder = () => {
           setLoading(false);
           return;
         }
-        setCaseStatus(caseData.status);
 
-        await updateWorkflowStatus(caseData.id, selectedCaseNumber);
+        setCaseStatus(caseData.status);
+        await updateWorkflowStatus(selectedCaseId, selectedCaseNumber || "");
 
         const { data, error } = await supabase
           .from("case_workflow_steps")
           .select("*")
-          .eq("case_id", caseData.id)
+          .eq("case_id", selectedCaseId)
           .order("step_order", { ascending: true });
 
         if (error) throw error;
@@ -199,7 +215,7 @@ const Wayfinder = () => {
         );
       } catch (error) {
         console.error("Failed to fetch workflow steps:", error);
-        setWorkflowSteps(defaultWorkflowSteps); // Fallback to default steps on error
+        setWorkflowSteps(defaultWorkflowSteps);
       } finally {
         setLoading(false);
       }
@@ -208,31 +224,19 @@ const Wayfinder = () => {
     fetchWorkflowSteps();
     const interval = setInterval(fetchWorkflowSteps, 30000);
     return () => clearInterval(interval);
-  }, [cases, selectedCaseNumber]);
+  }, [selectedCaseId, selectedCaseNumber]);
 
-  // Handle manual refresh
   const handleRefresh = async () => {
-    if (!selectedCaseNumber) return;
+    if (!selectedCaseId) return;
 
     try {
       setLoading(true);
-      const { data: caseData, error: caseError } = await supabase
-        .from("cases")
-        .select("id, status")
-        .eq("case_number", selectedCaseNumber)
-        .single();
-
-      if (caseError || !caseData) {
-        alert("Failed to find selected case.");
-        return;
-      }
-
-      await updateWorkflowStatus(caseData.id, selectedCaseNumber);
+      await updateWorkflowStatus(selectedCaseId, selectedCaseNumber || "");
 
       const { data, error } = await supabase
         .from("case_workflow_steps")
         .select("*")
-        .eq("case_id", caseData.id)
+        .eq("case_id", selectedCaseId)
         .order("step_order", { ascending: true });
 
       if (error) throw error;
@@ -257,12 +261,37 @@ const Wayfinder = () => {
         }))
       );
 
-      setCaseStatus(caseData.status);
+      const { data: caseData } = await supabase
+        .from("cases")
+        .select("status")
+        .eq("id", selectedCaseId)
+        .single();
+
+      setCaseStatus(caseData?.status || null);
     } catch (error) {
       console.error("Failed to refresh workflow steps:", error);
       alert("Failed to refresh case status. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCaseChange = (value: string) => {
+    if (value === "none") {
+      setSelectedCaseNumber(null);
+      setSelectedCaseId(null);
+      setWorkflowSteps(defaultWorkflowSteps);
+      setCaseStatus(null);
+      localStorage.removeItem("case_number");
+      navigate("/wayfinder");
+    } else {
+      const selectedCase = cases.find(c => c.case_number === value);
+      if (selectedCase) {
+        setSelectedCaseNumber(value);
+        setSelectedCaseId(selectedCase.id);
+        localStorage.setItem("case_number", value);
+        navigate(`/wayfinder/${selectedCase.id}`);
+      }
     }
   };
 
@@ -307,52 +336,44 @@ const Wayfinder = () => {
           </div>
 
           <div className="flex justify-center items-center space-x-4 mt-6">
-            {cases.length > 0 ? (
-              <>
-                <Select
-                  onValueChange={(value) => {
-                    setSelectedCaseNumber(value);
-                    localStorage.setItem("case_number", value);
-                  }}
-                  value={selectedCaseNumber || undefined}
-                  disabled={loading}
-                >
-                  <SelectTrigger className="w-[300px]">
-                    <SelectValue placeholder="Select a case">
-                      {selectedCaseNumber
-                        ? cases.find((c) => c.case_number === selectedCaseNumber)
-                            ?.case_number
-                        : "Select a case"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cases.map((caseItem) => (
-                      <SelectItem key={caseItem.id} value={caseItem.case_number}>
-                        {caseItem.case_number} ({caseItem.status})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  onClick={handleRefresh}
-                  disabled={loading || !selectedCaseNumber}
-                  className="flex items-center space-x-2"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Refresh Status</span>
-                </Button>
-                <Button
-                  onClick={() => navigate("/step1")}
-                  className="flex items-center space-x-2 bg-green-600 hover:bg-green-700"
-                >
-                  <span>Start New Case</span>
-                </Button>
-              </>
-            ) : (
-              <p className="text-muted-foreground max-w-2xl mx-auto">
-                Follow this step-by-step guide to navigate your legal process with confidence.
-              </p>
-            )}
+            <Select
+              onValueChange={handleCaseChange}
+              value={selectedCaseNumber || "none"}
+              disabled={loading}
+            >
+              <SelectTrigger className="w-[300px]">
+                <SelectValue placeholder="Select a case">
+                  {selectedCaseNumber
+                    ? cases.find((c) => c.case_number === selectedCaseNumber)?.case_number
+                    : "Select none"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select none</SelectItem>
+                {cases.map((caseItem) => (
+                  <SelectItem key={caseItem.id} value={caseItem.case_number}>
+                    {caseItem.case_number} ({caseItem.status})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={handleRefresh}
+              disabled={loading || !selectedCaseNumber}
+              className="flex items-center space-x-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Refresh Status</span>
+            </Button>
+            {
+              selectedCaseNumber &&
+              <Button
+                onClick={() => navigate("/step1")}
+                className="flex items-center space-x-2 bg-green-600 hover:bg-green-700"
+              >
+                <span>Start New Case</span>
+              </Button>
+            }
           </div>
 
           <div className="flex justify-center space-x-8 mt-6">
@@ -426,10 +447,6 @@ const Wayfinder = () => {
                                 <p className="text-sm">
                                   <strong>SignCare Document ID:</strong>{" "}
                                   {step.action_metadata.signcare_doc_id || "N/A"}
-                                </p>
-                                <p className="text-sm">
-                                  <strong>Action Status:</strong>{" "}
-                                  {step.action_status || "N/A"}
                                 </p>
                                 {step.action_metadata.signer_id && (
                                   <p className="text-sm">

@@ -35,6 +35,7 @@ const IncidentReportForm: React.FC = () => {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
 
   const navigate = useNavigate();
 
@@ -105,20 +106,20 @@ const IncidentReportForm: React.FC = () => {
         step_category: "User Action",
         is_required: true,
       },
+      // {
+      //   step_order: 3,
+      //   step_name: "Rule Matching",
+      //   description: "AI assigns reviewer and signer based on case details",
+      //   estimated_duration: "5 min",
+      //   is_active: true,
+      //   action_type: "Approve",
+      //   action_status: "Completed",
+      //   tasks: JSON.stringify(["AI processes case details", "Assign reviewer and signer"]),
+      //   step_category: "System Action",
+      //   is_required: true,
+      // },
       {
         step_order: 3,
-        step_name: "Rule Matching",
-        description: "AI assigns reviewer and signer based on case details",
-        estimated_duration: "5 min",
-        is_active: true,
-        action_type: "Approve",
-        action_status: "Completed",
-        tasks: JSON.stringify(["AI processes case details", "Assign reviewer and signer"]),
-        step_category: "System Action",
-        is_required: true,
-      },
-      {
-        step_order: 4,
         step_name: "Review Process",
         description: "Reviewer evaluates the submitted documents",
         estimated_duration: "1-2 days",
@@ -131,7 +132,7 @@ const IncidentReportForm: React.FC = () => {
         action_metadata: { reviewer_email: reviewerEmail, signcare_doc_id: signcareDocId },
       },
       {
-        step_order: 5,
+        step_order: 4,
         step_name: "Sign Process",
         description: "Signer provides electronic signature",
         estimated_duration: "1-2 days",
@@ -144,7 +145,7 @@ const IncidentReportForm: React.FC = () => {
         action_metadata: { signer_email: signerEmail, signcare_doc_id: signcareDocId },
       },
       {
-        step_order: 6,
+        step_order: 5,
         step_name: "Court Filing",
         description: "Submit documents to the court",
         estimated_duration: "1 hour",
@@ -233,6 +234,7 @@ const IncidentReportForm: React.FC = () => {
       if (insertError) throw insertError;
 
       const caseId = caseData.id;
+      setCurrentCaseId(caseId);
 
       // Fetch reviewer and signer user records
       const { data: reviewerUser, error: reviewerError } = await supabase
@@ -778,7 +780,7 @@ const IncidentReportForm: React.FC = () => {
                 <Dialog.Close asChild>
                   <Button
                     onClick={() => {
-                      navigate("/wayfinder");
+                      navigate(`/wayfinder/${currentCaseId}`);
                       localStorage.removeItem("case_number");
                     }}
                   >

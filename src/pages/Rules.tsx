@@ -140,7 +140,7 @@ const Rules = () => {
                   <TableHead>Category</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Priority</TableHead>
-                  <TableHead>Condition</TableHead>
+                  {/* <TableHead>Condition</TableHead> */}
                   <TableHead>Signer</TableHead>
                   <TableHead>Reviewer</TableHead>
                   <TableHead>Actions</TableHead>
@@ -170,7 +170,7 @@ const Rules = () => {
                     <TableCell>
                       <Badge variant={rule.priority === 'high' ? 'destructive' : 'outline'} className={rule.priority === 'medium' ? 'bg-primary text-primary-foreground' : ''}>{rule.priority}</Badge>
                     </TableCell>
-                    <TableCell>{rule.condition}</TableCell>
+                    {/* <TableCell>{rule.condition}</TableCell> */}
                     <TableCell>{rule.signer_email}</TableCell>
                     <TableCell>{rule.reviewer_email}</TableCell>
                     <TableCell>

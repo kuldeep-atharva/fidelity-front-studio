@@ -126,10 +126,10 @@ export default function RuleModal({ open, onClose, onSuccess, initialRule }: Rul
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
 
-          <div>
+          {/* <div>
             <Label>Condition</Label>
             <Textarea value={condition} onChange={(e) => setCondition(e.target.value)} />
-          </div>
+          </div> */}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
