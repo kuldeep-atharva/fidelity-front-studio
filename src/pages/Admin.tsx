@@ -25,22 +25,20 @@ import {
   Clock,
   FileText,
   Search,
-  Edit,
   Trash2,
   RefreshCcw,
 } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
 import { useEffect, useState } from "react";
-import axios from "axios";
 import { updateWorkflowStatus } from "@/utils/workflowUpdater";
 
 const Admin = () => {
   const [cases, setCases] = useState([]); // Cases from the database
   const [rules, setRules] = useState([]); // Rules from the database
-  const [filterRole, setFilterRole] = useState("all-roles");
-  const [filterStatus, setFilterStatus] = useState("all-status");
+  const [filterStatus, setFilterStatus] = useState("all-status"); // Removed filterRole since cases don't have a role
   const [users, setUsers] = useState([]);
   const [currentPage, setCurrentPage] = useState(1); // Current page for pagination
+  const [searchQuery, setSearchQuery] = useState(""); // Added for search functionality
   const casesPerPage = 10; // Number of cases per page
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
@@ -65,6 +63,7 @@ const Admin = () => {
         setRules(rulesData || []);
       } catch (error) {
         console.error("Error fetching data:", error);
+        alert("Failed to load cases or rules. Please try again.");
       } finally {
         setIsLoading(false);
       }
@@ -85,6 +84,7 @@ const Admin = () => {
         setUsers(usersData || []);
       } catch (error) {
         console.error("Error fetching users:", error);
+        alert("Failed to load users. Please try again.");
       }
     };
 
@@ -93,11 +93,17 @@ const Admin = () => {
 
   const filteredCases = cases
     .filter((caseItem) => {
-      const roleMatch =
-        filterRole === "all-roles" || caseItem.role === filterRole;
+      // Filter by status
       const statusMatch =
         filterStatus === "all-status" || caseItem.status === filterStatus;
-      return roleMatch && statusMatch;
+      // Filter by search query
+      const searchMatch =
+        searchQuery === "" ||
+        caseItem.case_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        caseItem.contact_email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        caseItem.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        caseItem.last_name.toLowerCase().includes(searchQuery.toLowerCase());
+      return statusMatch && searchMatch;
     })
     .sort(
       (a, b) =>
@@ -109,59 +115,39 @@ const Admin = () => {
     docId: string,
     refId: string
   ) => {
+    if (!docId || !refId) {
+      console.error("Missing document ID or reference ID for case:", id);
+      alert("Cannot check status: Missing document ID or reference ID.");
+      return;
+    }
+
     setIsCheckingStatus(true);
-    console.log("filtered cases:", filteredCases);
     try {
-      const statusResponse = await axios.post(
-        `${import.meta.env.VITE_API_SC_BASE}/esign/status`,
-        {
-          documentId: docId,
-          documentReferenceId: refId,
-        },
-        {
-          headers: {
-            "X-API-KEY": `${import.meta.env.VITE_API_SC_X_KEY}`,
-            "X-API-APP-ID": `${import.meta.env.VITE_API_SC_X_ID}`,
-          },
-        }
-      );
+      // Call updateWorkflowStatus to handle status updates
+      await updateWorkflowStatus(id, refId);
 
-      const responseData = statusResponse.data.data;
+      // Fetch the updated case to reflect changes in the UI
+      const { data: updatedCase, error: caseError } = await supabase
+        .from("cases")
+        .select("*")
+        .eq("id", id)
+        .single();
 
-      // Check if reviewer123 has Approved status
-      const reviewerApproved = responseData.signerInfo?.some(
-        (signer) =>
-          signer.signerRefId === "reviewer123" &&
-          signer.signerStatus === "Approved"
-      );
-
-      // Determine final status
-      let finalStatus = responseData.documentStatus;
-
-      if (finalStatus === "Pending" && reviewerApproved) {
-        finalStatus = "Reviewed";
+      if (caseError) {
+        console.error("Error fetching updated case:", caseError);
+        alert("Failed to fetch updated case data.");
+        return;
       }
 
-      const updatedCase = await supabase
-        .from("cases")
-        .update({ status: finalStatus })
-        .eq("id", id)
-        .select();
-      // const updatedCase = await supabase
-      // .from("cases")
-      // .update({ status: statusResponse.data.data.documentStatus })
-      // .eq("id", id)
-      // .select();
-      console.log("Updated case:", updatedCase);
+      // Update the cases state with the latest case data
       setCases((prev) =>
         prev.map((caseItem) =>
-          caseItem.id === updatedCase.data[0].id
-            ? updatedCase.data[0]
-            : caseItem
+          caseItem.id === updatedCase.id ? updatedCase : caseItem
         )
       );
     } catch (error) {
-      console.error("Error checking status:", error);
+      console.error("Error checking status for case", id, ":", error);
+      alert(`Failed to update status for case ${refId}. Please try again.`);
     } finally {
       setIsCheckingStatus(false);
     }
@@ -239,13 +225,13 @@ const Admin = () => {
             <StatsCard
               title="Pending Cases"
               value={cases
-                .filter((c) => c.status === "Pending")
+                .filter((c) => c.status === "In Progress")
                 .length.toString()}
               icon={<Clock className="w-5 h-5" />}
               iconBg="bg-destructive"
             />
             <StatsCard
-              title="Approved Cases"
+              title="Signed Cases"
               value={cases
                 .filter((c) => c.status === "Signed")
                 .length.toString()}
@@ -282,21 +268,13 @@ const Admin = () => {
                 <div className="flex gap-4 mb-6">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                    <Input placeholder="Search cases..." className="pl-10" />
+                    <Input
+                      placeholder="Search cases..."
+                      className="pl-10"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
                   </div>
-                  <Select
-                    defaultValue="all-roles"
-                    onValueChange={setFilterRole}
-                  >
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="All Roles" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all-roles">All Roles</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="user">User</SelectItem>
-                    </SelectContent>
-                  </Select>
                   <Select
                     defaultValue="all-status"
                     onValueChange={setFilterStatus}
@@ -308,9 +286,10 @@ const Admin = () => {
                       <SelectItem value="all-status">All Status</SelectItem>
                       <SelectItem value="New">New</SelectItem>
                       <SelectItem value="In Progress">In Progress</SelectItem>
-                      <SelectItem value="Approved">Approved</SelectItem>
+                      <SelectItem value="Reviewed">Reviewed</SelectItem>
+                      <SelectItem value="Signed">Signed</SelectItem>
                       <SelectItem value="Rejected">Rejected</SelectItem>
-                      <SelectItem value="Closed">Closed</SelectItem>
+                      <SelectItem value="Completed">Completed</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -319,19 +298,13 @@ const Admin = () => {
                   <div className="flex justify-center items-center h-64">
                     <div className="custom-loader" />
                   </div>
+                ) : paginatedCases.length === 0 ? (
+                  <div className="text-center py-6">
+                    <p className="text-muted-foreground">
+                      No cases found.
+                    </p>
+                  </div>
                 ) : (
-                  //     <div className="overflow-x-auto">
-                  //       {paginatedCases.length === 0 ? (
-                  //         <div className="text-center py-6">
-                  //           <p className="text-muted-foreground">
-                  //             No cases found.
-                  //           </p>
-                  //         </div>
-                  //       ) : null}
-                  //     </div>
-                  //   )
-                  // }
-
                   <div className="border rounded-lg">
                     <Table>
                       <TableHeader>
@@ -359,7 +332,8 @@ const Admin = () => {
                                 variant={
                                   caseItem.status === "New"
                                     ? "default"
-                                    : caseItem.status === "Approved"
+                                    : caseItem.status === "Signed" ||
+                                      caseItem.status === "Completed"
                                     ? "outline"
                                     : caseItem.status === "Rejected"
                                     ? "destructive"
@@ -377,7 +351,7 @@ const Admin = () => {
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
-                                disabled={isCheckingStatus}
+                                  disabled={isCheckingStatus || !caseItem.signcare_doc_id}
                                   variant="ghost"
                                   size="sm"
                                   onClick={() =>

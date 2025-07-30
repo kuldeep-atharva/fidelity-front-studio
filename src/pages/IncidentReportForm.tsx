@@ -310,7 +310,7 @@ const IncidentReportForm: React.FC = () => {
                     {
                       X1: "70",
                       X2: "180",
-                      Y1: "722",
+                      Y1: "682",
                       Y2: "40",
                     },
                   ],
