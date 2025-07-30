@@ -390,7 +390,7 @@ const Wayfinder = () => {
                 <SelectItem value="none">Select none</SelectItem>
                 {cases.map((caseItem) => (
                   <SelectItem key={caseItem.id} value={caseItem.case_number}>
-                    {caseItem.case_number} ({caseItem.status})
+                    {caseItem.case_number} ({caseItem.status === "Completed" ? "Signed" : caseItem.status})
                   </SelectItem>
                 ))}
               </SelectContent>

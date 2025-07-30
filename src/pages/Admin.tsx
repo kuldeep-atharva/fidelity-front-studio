@@ -233,7 +233,7 @@ const Admin = () => {
             <StatsCard
               title="Signed Cases"
               value={cases
-                .filter((c) => c.status === "Signed")
+                .filter((c) => c.status === "Completed")
                 .length.toString()}
               icon={<UserCheck className="w-5 h-5" />}
               iconBg="bg-success"
@@ -340,7 +340,7 @@ const Admin = () => {
                                     : "secondary"
                                 }
                               >
-                                {caseItem.status}
+                                {caseItem.status === "Completed" ? "Signed" : caseItem.status}
                               </Badge>
                             </TableCell>
                             <TableCell>{caseItem.type_of_incident}</TableCell>
