@@ -31,6 +31,7 @@ import {
 import { supabase } from "@/utils/supabaseClient";
 import { useEffect, useState } from "react";
 import { updateWorkflowStatus } from "@/utils/workflowUpdater";
+import axios from "axios";
 
 const Admin = () => {
   const [cases, setCases] = useState([]); // Cases from the database
@@ -41,7 +42,7 @@ const Admin = () => {
   const [searchQuery, setSearchQuery] = useState(""); // Added for search functionality
   const casesPerPage = 10; // Number of cases per page
   const [isLoading, setIsLoading] = useState(false);
-  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  // const [isCheckingStatus, setIsCheckingStatus] = useState(false);
 
   useEffect(() => {
     const fetchCasesAndRules = async () => {
@@ -115,42 +116,70 @@ const Admin = () => {
     docId: string,
     refId: string
   ) => {
-    if (!docId || !refId) {
-      console.error("Missing document ID or reference ID for case:", id);
-      alert("Cannot check status: Missing document ID or reference ID.");
-      return;
-    }
-
-    setIsCheckingStatus(true);
-    try {
-      // Call updateWorkflowStatus to handle status updates
-      await updateWorkflowStatus(id, refId);
-
-      // Fetch the updated case to reflect changes in the UI
-      const { data: updatedCase, error: caseError } = await supabase
-        .from("cases")
-        .select("*")
-        .eq("id", id)
-        .single();
-
-      if (caseError) {
-        console.error("Error fetching updated case:", caseError);
-        alert("Failed to fetch updated case data.");
-        return;
+    console.log("filtered cases:", filteredCases);
+    const statusResponse = await axios.post(
+      `${import.meta.env.VITE_API_SC_BASE}/esign/status`,
+      {
+        documentId: docId,
+        documentReferenceId: refId,
+      },
+      {
+        headers: {
+          "X-API-KEY": `${import.meta.env.VITE_API_SC_X_KEY}`,
+          "X-API-APP-ID": `${import.meta.env.VITE_API_SC_X_ID}`,
+        },
       }
+    );
 
-      // Update the cases state with the latest case data
-      setCases((prev) =>
-        prev.map((caseItem) =>
-          caseItem.id === updatedCase.id ? updatedCase : caseItem
-        )
+    const responseData = statusResponse.data.data;
+
+    const { data: reviewerDetails } = await supabase
+      .from("users")
+      .select("*");
+
+    // Check if any Reviewer has Approved status
+    const reviewerApproved = responseData.signerInfo?.some((signer) => {
+      const matchedUser = reviewerDetails.find(
+        (user) => user.id === signer.signerRefId
       );
-    } catch (error) {
-      console.error("Error checking status for case", id, ":", error);
-      alert(`Failed to update status for case ${refId}. Please try again.`);
-    } finally {
-      setIsCheckingStatus(false);
+      return (
+        matchedUser?.role === "Reviewer" && signer.signerStatus === "Approved"
+      );
+    });
+
+    const signerApproved = responseData.signerInfo?.some((signer) => {
+      const matchedUser = reviewerDetails.find(
+        (user) => user.id === signer.signerRefId
+      );
+      return (
+        matchedUser?.role === "Signer" && signer.signerStatus === "Signed"
+      );
+    });
+
+    // Determine final status
+    let finalStatus = responseData.documentStatus;
+
+    if (finalStatus === "Pending" && reviewerApproved) {
+        finalStatus = "Reviewed";
+    }else if (finalStatus === "Pending" && signerApproved) {
+      finalStatus = "Signed";
+    } else if (finalStatus === "Pending") {
+      finalStatus = "In Progress";
+    } else if (finalStatus === "Rejected") {
+      finalStatus = "Rejected";
     }
+
+    const updatedCase = await supabase
+      .from("cases")
+      .update({ status: finalStatus })
+      .eq("id", id)
+      .select();
+    console.log("Updated case:", updatedCase);
+    setCases((prev) =>
+      prev.map((caseItem) =>
+        caseItem.id === updatedCase.data[0].id ? updatedCase.data[0] : caseItem
+      )
+    );
   };
 
   const getPriorityByRuleId = (ruleId) => {
@@ -351,7 +380,7 @@ const Admin = () => {
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
-                                  disabled={isCheckingStatus || !caseItem.signcare_doc_id}
+                                  disabled={!caseItem.signcare_doc_id}
                                   variant="ghost"
                                   size="sm"
                                   onClick={() =>
