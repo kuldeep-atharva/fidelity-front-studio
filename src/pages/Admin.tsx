@@ -32,6 +32,7 @@ import {
 import { supabase } from "@/utils/supabaseClient";
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { updateWorkflowStatus } from "@/utils/workflowUpdater";
 
 const Admin = () => {
   const [cases, setCases] = useState([]); // Cases from the database
@@ -165,10 +166,12 @@ const Admin = () => {
       setIsCheckingStatus(false);
     }
   };
+
   const getPriorityByRuleId = (ruleId) => {
     const rule = rules.find((r) => r.id === ruleId);
     return rule ? rule.priority : "N/A"; // Return "N/A" if no matching rule is found
   };
+
   const handleRoleChange = async (userId, newRole) => {
     try {
       const { error } = await supabase

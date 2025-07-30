@@ -76,7 +76,6 @@ Thank you for your precision—this accuracy is vital for the user’s confidenc
     // }
     return result;
   } catch (e) {
-    console.error('JSON parsing error:', e);
     const fallback = trimmedRules.find((r) => r.type_of_incident === caseDetails.type_of_incident) || trimmedRules[0];
     return {
       rule_id: fallback?.id,
