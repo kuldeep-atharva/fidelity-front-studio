@@ -3,8 +3,21 @@ import Layout from "@/components/Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle, Circle, Clock, ArrowRight, AlertCircle, RefreshCw } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  CheckCircle,
+  Circle,
+  Clock,
+  ArrowRight,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import ChatModal from "@/components/ChatModal";
 import { supabase } from "@/utils/supabaseClient";
@@ -14,10 +27,80 @@ const Wayfinder = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<any[]>([]);
   const [cases, setCases] = useState<any[]>([]);
-  const [selectedCaseNumber, setSelectedCaseNumber] = useState<string | null>(localStorage.getItem("case_number") || null);
+  const [selectedCaseNumber, setSelectedCaseNumber] = useState<string | null>(
+    localStorage.getItem("case_number") || null
+  );
   const [loading, setLoading] = useState(true);
   const [caseStatus, setCaseStatus] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // Default workflow steps when no cases are available
+  const defaultWorkflowSteps = [
+    {
+      id: "default-1",
+      title: "Case Assessment",
+      description: "Complete the initial case assessment form to start the legal process.",
+      status: "current",
+      duration: "1-2 days",
+      tasks: [
+        "Fill out the incident report form.",
+        "Provide details about the case.",
+        "Submit for initial review.",
+      ],
+      action_metadata: {},
+      failure_reason: null,
+    },
+    {
+      id: "default-2",
+      title: "Document Preparation",
+      description: "Prepare the necessary legal documents for the case.",
+      status: "upcoming",
+      duration: "2-3 days",
+      tasks: [],
+      action_metadata: {},
+      failure_reason: null,
+    },
+    {
+      id: "default-3",
+      title: "Rule Matching",
+      description: "Match the case with applicable legal rules and regulations.",
+      status: "upcoming",
+      duration: "1-2 days",
+      tasks: [],
+      action_metadata: {},
+      failure_reason: null,
+    },
+    {
+      id: "default-4",
+      title: "Review Process",
+      description: "The case is reviewed by an assigned reviewer.",
+      status: "upcoming",
+      duration: "2-3 days",
+      tasks: [],
+      action_metadata: {},
+      failure_reason: null,
+    },
+    {
+      id: "default-5",
+      title: "Sign Process",
+      description: "The case documents are sent for signing.",
+      status: "upcoming",
+      duration: "1-2 days",
+      tasks: [],
+      action_metadata: {},
+      failure_reason: null,
+    },
+    {
+      id: "default-6",
+      title: "Court Filing",
+      description: "The finalized documents are filed with the court.",
+      status: "upcoming",
+      duration: "1 day",
+      tasks: [],
+      action_metadata: {},
+      failure_reason: null,
+    },
+  ];
 
   // Fetch all cases for the dropdown
   useEffect(() => {
@@ -31,12 +114,28 @@ const Wayfinder = () => {
         if (error) throw error;
         setCases(data || []);
 
-        if (!selectedCaseNumber && data && data.length > 0) {
-          setSelectedCaseNumber(data[0].case_number);
-          localStorage.setItem("case_number", data[0].case_number);
+        if (data && data.length > 0) {
+          // Select the latest case (first in the ordered list)
+          const latestCase = data[0];
+          if (!selectedCaseNumber || !data.some((c) => c.case_number === selectedCaseNumber)) {
+            setSelectedCaseNumber(latestCase.case_number);
+            localStorage.setItem("case_number", latestCase.case_number);
+          }
+        } else {
+          // No cases available, set default workflow steps
+          setWorkflowSteps(defaultWorkflowSteps);
+          setCaseStatus(null);
+          setSelectedCaseNumber(null);
+          localStorage.removeItem("case_number");
         }
       } catch (error) {
         console.error("Failed to fetch cases:", error);
+        setWorkflowSteps(defaultWorkflowSteps); // Fallback to default steps on error
+        setCaseStatus(null);
+        setSelectedCaseNumber(null);
+        localStorage.removeItem("case_number");
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -46,14 +145,14 @@ const Wayfinder = () => {
   // Fetch workflow steps and case status for the selected case
   useEffect(() => {
     const fetchWorkflowSteps = async () => {
-      setLoading(true);
-      if (!selectedCaseNumber) {
-        setWorkflowSteps([]);
+      if (cases.length === 0 || !selectedCaseNumber) {
+        setWorkflowSteps(defaultWorkflowSteps); // Always show default steps when no cases
         setCaseStatus(null);
         setLoading(false);
         return;
       }
 
+      setLoading(true);
       try {
         const { data: caseData, error: caseError } = await supabase
           .from("cases")
@@ -62,7 +161,7 @@ const Wayfinder = () => {
           .single();
 
         if (caseError || !caseData) {
-          setWorkflowSteps([]);
+          setWorkflowSteps(defaultWorkflowSteps);
           setCaseStatus(null);
           setLoading(false);
           return;
@@ -84,9 +183,14 @@ const Wayfinder = () => {
             id: step.id,
             title: step.step_name,
             description: step.description,
-            status: step.action_status === "Completed" ? "completed" :
-                    step.action_status === "Rejected" ? "rejected" :
-                    step.is_active ? "current" : "upcoming",
+            status:
+              step.action_status === "Completed"
+                ? "completed"
+                : step.action_status === "Rejected"
+                ? "rejected"
+                : step.is_active
+                ? "current"
+                : "upcoming",
             duration: step.estimated_duration,
             tasks: JSON.parse(step.tasks || "[]"),
             action_metadata: step.action_metadata || {},
@@ -95,7 +199,7 @@ const Wayfinder = () => {
         );
       } catch (error) {
         console.error("Failed to fetch workflow steps:", error);
-        setWorkflowSteps([]);
+        setWorkflowSteps(defaultWorkflowSteps); // Fallback to default steps on error
       } finally {
         setLoading(false);
       }
@@ -104,7 +208,7 @@ const Wayfinder = () => {
     fetchWorkflowSteps();
     const interval = setInterval(fetchWorkflowSteps, 30000);
     return () => clearInterval(interval);
-  }, [selectedCaseNumber]);
+  }, [cases, selectedCaseNumber]);
 
   // Handle manual refresh
   const handleRefresh = async () => {
@@ -118,7 +222,10 @@ const Wayfinder = () => {
         .eq("case_number", selectedCaseNumber)
         .single();
 
-      if (caseError || !caseData) return;
+      if (caseError || !caseData) {
+        alert("Failed to find selected case.");
+        return;
+      }
 
       await updateWorkflowStatus(caseData.id, selectedCaseNumber);
 
@@ -135,9 +242,14 @@ const Wayfinder = () => {
           id: step.id,
           title: step.step_name,
           description: step.description,
-          status: step.action_status === "Completed" ? "completed" :
-                  step.action_status === "Rejected" ? "rejected" :
-                  step.is_active ? "current" : "upcoming",
+          status:
+            step.action_status === "Completed"
+              ? "completed"
+              : step.action_status === "Rejected"
+              ? "rejected"
+              : step.is_active
+              ? "current"
+              : "upcoming",
           duration: step.estimated_duration,
           tasks: JSON.parse(step.tasks || "[]"),
           action_metadata: step.action_metadata || {},
@@ -148,6 +260,7 @@ const Wayfinder = () => {
       setCaseStatus(caseData.status);
     } catch (error) {
       console.error("Failed to refresh workflow steps:", error);
+      alert("Failed to refresh case status. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -183,10 +296,12 @@ const Wayfinder = () => {
           <h1 className="text-3xl font-bold text-primary">Wayfinder</h1>
           <div className="space-y-2">
             <h2 className="text-xl font-semibold text-primary">Your Legal Journey</h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">
-              Follow this step-by-step guide to navigate your legal process with confidence. Select a case to view its workflow.
-            </p>
-            {caseStatus && (
+            {cases.length > 0 && (
+              <p className="text-muted-foreground max-w-2xl mx-auto">
+                Select a case to view its workflow.
+              </p>
+            )}
+            {caseStatus && selectedCaseNumber && (
               <p className="text-muted-foreground">Case Status: {caseStatus || "N/A"}</p>
             )}
           </div>
@@ -200,10 +315,14 @@ const Wayfinder = () => {
                     localStorage.setItem("case_number", value);
                   }}
                   value={selectedCaseNumber || undefined}
+                  disabled={loading}
                 >
                   <SelectTrigger className="w-[300px]">
                     <SelectValue placeholder="Select a case">
-                      {selectedCaseNumber ? cases.find(c => c.case_number === selectedCaseNumber)?.case_number : "Select a case"}
+                      {selectedCaseNumber
+                        ? cases.find((c) => c.case_number === selectedCaseNumber)
+                            ?.case_number
+                        : "Select a case"}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -230,14 +349,9 @@ const Wayfinder = () => {
                 </Button>
               </>
             ) : (
-              <div className="text-center text-red-600">
-                <Button
-                  onClick={() => navigate("/step1")}
-                  className="ml-2 bg-green-600 hover:bg-green-700 text-white"
-                >
-                  Start New Case
-                </Button>
-              </div>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
+                Follow this step-by-step guide to navigate your legal process with confidence.
+              </p>
             )}
           </div>
 
@@ -263,10 +377,6 @@ const Wayfinder = () => {
 
         {loading ? (
           <div className="text-center">Loading workflow steps...</div>
-        ) : workflowSteps.length === 0 ? (
-          <div className="text-center text-red-600">
-            No workflow steps available. Please start a new case.
-          </div>
         ) : (
           <div className="space-y-6">
             {workflowSteps.map((step, index) => (
@@ -306,38 +416,39 @@ const Wayfinder = () => {
                               </li>
                             ))}
                           </ul>
-                          {(step.title === "Review Process" || step.title === "Sign Process") && step.action_metadata && (
-                            <div className="mt-4 space-y-2">
-                              <p className="text-sm">
-                                <strong>{step.title === "Review Process" ? "Reviewer" : "Signer"} Email:</strong>{" "}
-                                {step.action_metadata[step.title === "Review Process" ? "reviewer_email" : "signer_email"] || "N/A"}
-                              </p>
-                              <p className="text-sm">
-                                <strong>SignCare Document ID:</strong>{" "}
-                                {step.action_metadata.signcare_doc_id || "N/A"}
-                              </p>
-                              <p className="text-sm">
-                                <strong>Action Status:</strong>{" "}
-                                {step.action_status || "N/A"}
-                              </p>
-                              {step.action_metadata.signer_id && (
+                          {(step.title === "Review Process" || step.title === "Sign Process") &&
+                            step.action_metadata && (
+                              <div className="mt-4 space-y-2">
                                 <p className="text-sm">
-                                  <strong>Signer ID:</strong>{" "}
-                                  {step.action_metadata.signer_id}
+                                  <strong>{step.title === "Review Process" ? "Reviewer" : "Signer"} Email:</strong>{" "}
+                                  {step.action_metadata[step.title === "Review Process" ? "reviewer_email" : "signer_email"] || "N/A"}
                                 </p>
-                              )}
-                              {step.action_metadata.invitation_expiry && (
                                 <p className="text-sm">
-                                  <strong>Invitation Expiry:</strong>{" "}
-                                  {new Date(step.action_metadata.invitation_expiry).toLocaleString()}
+                                  <strong>SignCare Document ID:</strong>{" "}
+                                  {step.action_metadata.signcare_doc_id || "N/A"}
                                 </p>
-                              )}
-                            </div>
-                          )}
+                                <p className="text-sm">
+                                  <strong>Action Status:</strong>{" "}
+                                  {step.action_status || "N/A"}
+                                </p>
+                                {step.action_metadata.signer_id && (
+                                  <p className="text-sm">
+                                    <strong>Signer ID:</strong>{" "}
+                                    {step.action_metadata.signer_id}
+                                  </p>
+                                )}
+                                {step.action_metadata.invitation_expiry && (
+                                  <p className="text-sm">
+                                    <strong>Invitation Expiry:</strong>{" "}
+                                    {new Date(step.action_metadata.invitation_expiry).toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           {step.status === "current" && step.title === "Case Assessment" && (
                             <div className="flex space-x-3 mt-4">
                               <Button onClick={() => stepHandler(step.title)}>
-                                Get Started to File Case
+                                Start New Case
                                 <ArrowRight className="w-4 h-4 ml-2" />
                               </Button>
                               <Button variant="outline" onClick={() => setIsOpen(true)}>
