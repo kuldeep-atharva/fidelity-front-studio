@@ -114,6 +114,7 @@ const Wayfinder = () => {
         const { data: casesData, error: casesError } = await supabase
           .from("cases")
           .select("id, case_number, status")
+          .neq('status', 'New')
           .order("created_at", { ascending: false });
 
         if (casesError) throw casesError;
@@ -498,7 +499,7 @@ const Wayfinder = () => {
               <span className="text-sm">Current Step</span>
             </div>
             <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-muted rounded-full"></div>
+              <div className="w-3 h-3 bg-muted rounded-full border-2 border-gray"></div>
               <span className="text-sm">Upcoming</span>
             </div>
             <div className="flex items-center space-x-2">

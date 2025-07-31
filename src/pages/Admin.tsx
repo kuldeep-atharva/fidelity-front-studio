@@ -55,7 +55,7 @@ const Admin = () => {
         const [casesRes, rulesRes, usersRes] = await Promise.all([
           supabase.from("cases").select(
             "id, case_number, first_name, last_name, status, created_at, contact_email, type_of_incident, rule_applied, signcare_doc_id"
-          ),
+          ).neq('status', 'New')          ,
           supabase.from("rules").select("id, priority"),
           supabase.from("users").select("id, full_name, email, role, created_at"),
         ]);
