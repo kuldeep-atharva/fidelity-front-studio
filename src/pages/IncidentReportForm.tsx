@@ -47,6 +47,8 @@ const IncidentReportForm: React.FC = () => {
   ) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+
+    setValidationError(null);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -239,7 +241,7 @@ const IncidentReportForm: React.FC = () => {
         type_of_incident: newCase.type_of_incident,
         date_of_incident: newCase.date_of_incident,
         contact_email: newCase.contact_email,
-        case_description: newCase.case_description
+        case_description: newCase.case_description,
       };
       const { data: rules, error: rulesError } = await supabase
         .from("rules")
@@ -531,19 +533,49 @@ const IncidentReportForm: React.FC = () => {
   };
 
   const validateStep1 = () => {
-    if (
-      !form.first_name ||
-      !form.last_name ||
-      !form.date_of_incident ||
-      !form.type_of_incident ||
-      !form.contact_phone ||
-      !form.contact_email
-    ) {
+    if (!form.first_name) {
+      setValidationError("First name is required.");
+      return false;
+    }
+
+    if (!form.last_name) {
+      setValidationError("Last name is required.");
+      return false;
+    }
+
+    if (!form.contact_phone) {
+      setValidationError("Contact Phone Number is required.");
+      return false;
+    }
+
+    if (!/^[1-9][0-9]{9}$/.test(form.contact_phone)) {
       setValidationError(
-        "Please fill all required fields before proceeding to next step."
+        "Contact phone number must be 10 digits and cannot start with 0."
       );
       return false;
     }
+
+    if (!form.contact_email) {
+      setValidationError("Email is required.");
+      return false;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(form.contact_email)) {
+      setValidationError("Please enter a valid email address.");
+      return false;
+    }
+
+    if (!form.date_of_incident) {
+      setValidationError("Date of incident is required.");
+      return false;
+    }
+
+    if (!form.type_of_incident) {
+      setValidationError("Type of incident is required.");
+      return false;
+    }
+
     setValidationError(null);
     return true;
   };
@@ -588,7 +620,10 @@ const IncidentReportForm: React.FC = () => {
               ].map((field) => (
                 <div key={field}>
                   <label className="block text-sm mb-1 font-medium capitalize">
-                    {field.replace("_", " ")} *
+                    {field === "contact_phone"
+                      ? "Contact Phone Number"
+                      : field.replace("_", " ")}{" "}
+                    *
                   </label>
                   <input
                     name={field}
