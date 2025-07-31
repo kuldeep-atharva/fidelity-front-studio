@@ -234,7 +234,7 @@ const Admin = () => {
             <StatsCard
               title="Pending Cases"
               value={cases
-                .filter((c) => c.status === "In Progress")
+                .filter((c) => c.status === "In Progress" || c.status === "Reviewed" || c.status === "Pending")
                 .length.toString()}
               icon={<Clock className="w-5 h-5" />}
               iconBg="bg-destructive"
