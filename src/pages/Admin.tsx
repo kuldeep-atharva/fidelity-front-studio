@@ -242,7 +242,7 @@ const Admin = () => {
             <StatsCard
               title="Signed Cases"
               value={cases
-                .filter((c) => c.status === "Completed")
+                .filter((c) => c.status === "Completed" || c.status === "Signed")
                 .length.toString()}
               icon={<UserCheck className="w-5 h-5" />}
               iconBg="bg-success"
