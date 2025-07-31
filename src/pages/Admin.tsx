@@ -1,6 +1,12 @@
+// admin.tsx
 import Layout from "@/components/Layout";
 import StatsCard from "@/components/StatsCard";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -29,163 +35,157 @@ import {
   RefreshCcw,
 } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
-import { useEffect, useState } from "react";
-import { updateWorkflowStatus } from "@/utils/workflowUpdater";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
 const Admin = () => {
-  const [cases, setCases] = useState([]); // Cases from the database
-  const [rules, setRules] = useState([]); // Rules from the database
-  const [filterStatus, setFilterStatus] = useState("all-status"); // Removed filterRole since cases don't have a role
+  const [cases, setCases] = useState([]);
+  const [rules, setRules] = useState([]);
   const [users, setUsers] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1); // Current page for pagination
-  const [searchQuery, setSearchQuery] = useState(""); // Added for search functionality
-  const casesPerPage = 10; // Number of cases per page
+  const [filterStatus, setFilterStatus] = useState("all-status");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
-  // const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const casesPerPage = 10;
 
   useEffect(() => {
-    const fetchCasesAndRules = async () => {
+    const fetchData = async () => {
       setIsLoading(true);
       try {
-        // Fetch cases
-        const { data: casesData, error: casesError } = await supabase
-          .from("cases")
-          .select("*");
-        if (casesError) throw casesError;
+        const [casesRes, rulesRes, usersRes] = await Promise.all([
+          supabase.from("cases").select(
+            "id, case_number, first_name, last_name, status, created_at, contact_email, type_of_incident, rule_applied, signcare_doc_id"
+          ),
+          supabase.from("rules").select("id, priority"),
+          supabase.from("users").select("id, full_name, email, role, created_at"),
+        ]);
 
-        // Fetch rules
-        const { data: rulesData, error: rulesError } = await supabase
-          .from("rules")
-          .select("*");
-        if (rulesError) throw rulesError;
+        if (casesRes.error || rulesRes.error || usersRes.error)
+          throw casesRes.error || rulesRes.error || usersRes.error;
 
-        setCases(casesData || []);
-        setRules(rulesData || []);
+        setCases(casesRes.data || []);
+        setRules(rulesRes.data || []);
+        setUsers(usersRes.data || []);
       } catch (error) {
-        console.error("Error fetching data:", error);
-        alert("Failed to load cases or rules. Please try again.");
+        console.error("Data fetch error:", error);
+        alert("Failed to load data.");
       } finally {
         setIsLoading(false);
       }
     };
-
-    fetchCasesAndRules();
+    fetchData();
   }, []);
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        // Fetch users
-        const { data: usersData, error: usersError } = await supabase
-          .from("users")
-          .select("*");
-        if (usersError) throw usersError;
+  const filteredCases = useMemo(() => {
+    return cases
+      .filter((caseItem) => {
+        const statusMatch =
+          (filterStatus === "all-status" || ((caseItem.status === "Completed" ? "Signed" : caseItem.status) === filterStatus));
+        const searchMatch =
+          searchQuery === "" ||
+          [
+            caseItem.case_number,
+            caseItem.contact_email,
+            caseItem.first_name,
+            caseItem.last_name,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(searchQuery.toLowerCase());
+        return statusMatch && searchMatch;
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() -
+          new Date(a.created_at).getTime()
+      );
+  }, [cases, filterStatus, searchQuery]);
 
-        setUsers(usersData || []);
-      } catch (error) {
-        console.error("Error fetching users:", error);
-        alert("Failed to load users. Please try again.");
-      }
-    };
+  const paginatedCases = useMemo(() => {
+    const start = (currentPage - 1) * casesPerPage;
+    return filteredCases.slice(start, start + casesPerPage);
+  }, [filteredCases, currentPage]);
 
-    fetchUsers();
-  }, []);
+  const totalPages = Math.ceil(filteredCases.length / casesPerPage);
 
-  const filteredCases = cases
-    .filter((caseItem) => {
-      // Filter by status
-      const statusMatch =
-        filterStatus === "all-status" || caseItem.status === filterStatus;
-      // Filter by search query
-      const searchMatch =
-        searchQuery === "" ||
-        caseItem.case_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        caseItem.contact_email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        caseItem.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        caseItem.last_name.toLowerCase().includes(searchQuery.toLowerCase());
-      return statusMatch && searchMatch;
-    })
-    .sort(
-      (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    ); // Sort by created_at in descending order
+  const handlePageChange = (pageNumber) => {
+    setCurrentPage(pageNumber);
+  };
 
-  const checkStatusHandler = async (
-    id: string,
-    docId: string,
-    refId: string
-  ) => {
-    console.log("filtered cases:", filteredCases);
-    const statusResponse = await axios.post(
-      `${import.meta.env.VITE_API_SC_BASE}/esign/status`,
-      {
-        documentId: docId,
-        documentReferenceId: refId,
-      },
-      {
-        headers: {
-          "X-API-KEY": `${import.meta.env.VITE_API_SC_X_KEY}`,
-          "X-API-APP-ID": `${import.meta.env.VITE_API_SC_X_ID}`,
+  const checkStatusHandler = async (id, docId, refId) => {
+    try {
+      const { data: res } = await axios.post(
+        `${import.meta.env.VITE_API_SC_BASE}/esign/status`,
+        {
+          documentId: docId,
+          documentReferenceId: refId,
         },
-      }
-    );
-
-    const responseData = statusResponse.data.data;
-
-    const { data: reviewerDetails } = await supabase
-      .from("users")
-      .select("*");
-
-    // Check if any Reviewer has Approved status
-    const reviewerApproved = responseData.signerInfo?.some((signer) => {
-      const matchedUser = reviewerDetails.find(
-        (user) => user.id === signer.signerRefId
+        {
+          headers: {
+            "X-API-KEY": `${import.meta.env.VITE_API_SC_X_KEY}`,
+            "X-API-APP-ID": `${import.meta.env.VITE_API_SC_X_ID}`,
+          },
+        }
       );
-      return (
-        matchedUser?.role === "Reviewer" && signer.signerStatus === "Approved"
-      );
-    });
 
-    const signerApproved = responseData.signerInfo?.some((signer) => {
-      const matchedUser = reviewerDetails.find(
-        (user) => user.id === signer.signerRefId
-      );
-      return (
-        matchedUser?.role === "Signer" && signer.signerStatus === "Signed"
-      );
-    });
+      const signerInfo = res.data.signerInfo || [];
 
-    // Determine final status
-    let finalStatus = responseData.documentStatus;
+      const reviewerApproved = signerInfo.some((signer) => {
+        const user = users.find((u) => u.id === signer.signerRefId);
+        return user?.role === "Reviewer" && signer.signerStatus === "Approved";
+      });
 
-    if (finalStatus === "Pending" && reviewerApproved) {
-        finalStatus = "Reviewed";
-    }else if (finalStatus === "Pending" && signerApproved) {
-      finalStatus = "Signed";
-    } else if (finalStatus === "Pending") {
-      finalStatus = "In Progress";
-    } else if (finalStatus === "Rejected") {
-      finalStatus = "Rejected";
+      const signerApproved = signerInfo.some((signer) => {
+        const user = users.find((u) => u.id === signer.signerRefId);
+        return user?.role === "Signer" && signer.signerStatus === "Signed";
+      });
+
+      let finalStatus = res.data.documentStatus;
+
+      if (finalStatus === "Pending" && reviewerApproved) finalStatus = "Reviewed";
+      else if (finalStatus === "Pending" && signerApproved) finalStatus = "Signed";
+      else if (finalStatus === "Pending") finalStatus = "In Progress";
+
+      const { data: updated } = await supabase
+        .from("cases")
+        .update({ status: finalStatus })
+        .eq("id", id)
+        .select();
+
+      if (updated && updated.length)
+        setCases((prev) =>
+          prev.map((c) => (c.id === id ? updated[0] : c))
+        );
+    } catch (err) {
+      console.error("Status check error:", err);
     }
-
-    const updatedCase = await supabase
-      .from("cases")
-      .update({ status: finalStatus })
-      .eq("id", id)
-      .select();
-    console.log("Updated case:", updatedCase);
-    setCases((prev) =>
-      prev.map((caseItem) =>
-        caseItem.id === updatedCase.data[0].id ? updatedCase.data[0] : caseItem
-      )
-    );
   };
 
   const getPriorityByRuleId = (ruleId) => {
-    const rule = rules.find((r) => r.id === ruleId);
-    return rule ? rule.priority : "N/A"; // Return "N/A" if no matching rule is found
+    const priority = rules.find((r) => r.id === ruleId)?.priority;
+    let color: "default" | "destructive" | "secondary" | "outline" = "secondary";
+
+    console.log("Priority:", priority);
+
+    if (priority === "high") color = "destructive";
+    else if (priority === "medium") color = "default";
+    else if (priority === "low") color = "outline";
+
+    return priority ? <Badge variant={color}>{priority}</Badge> : <Badge variant="secondary">N/A</Badge>;
   };
+
+  const getStatusBadge = (status: string) => {
+    let variant: "default" | "destructive" | "secondary" | "outline" = "secondary";
+
+    if (status === "New") variant = "default";
+    else if (status === "Signed" || status === "Completed") variant = "outline";
+    else if (status === "Rejected") variant = "destructive";
+    else if (status === "Reviewed") variant = "default"; // change to 'default' if 'success' is invalid
+    else if (status === "In Progress") variant = "secondary";
+
+    return <Badge variant={variant}>{status === "Completed" ? "Signed" : status}</Badge>;
+  };
+
 
   const handleRoleChange = async (userId, newRole) => {
     try {
@@ -193,33 +193,13 @@ const Admin = () => {
         .from("users")
         .update({ role: newRole })
         .eq("id", userId);
-
-      if (error) {
-        console.error("Error updating role:", error);
-        alert("Failed to update the role. Please try again.");
-      } else {
-        alert("Role updated successfully!");
-        setUsers((prevUsers) =>
-          prevUsers.map((user) =>
-            user.id === userId ? { ...user, role: newRole } : user
-          )
-        );
-      }
+      if (error) throw error;
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+      );
     } catch (err) {
-      console.error("Unexpected error:", err);
-      alert("An unexpected error occurred. Please try again.");
+      console.error("Role update error:", err);
     }
-  };
-
-  // Calculate paginated cases
-  const indexOfLastCase = currentPage * casesPerPage;
-  const indexOfFirstCase = indexOfLastCase - casesPerPage;
-  const paginatedCases = filteredCases.slice(indexOfFirstCase, indexOfLastCase);
-
-  const totalPages = Math.ceil(filteredCases.length / casesPerPage);
-
-  const handlePageChange = (pageNumber: number) => {
-    setCurrentPage(pageNumber);
   };
 
   return (
@@ -357,20 +337,7 @@ const Admin = () => {
                             <TableCell>{caseItem.first_name}</TableCell>
                             <TableCell>{caseItem.last_name}</TableCell>
                             <TableCell>
-                              <Badge
-                                variant={
-                                  caseItem.status === "New"
-                                    ? "default"
-                                    : caseItem.status === "Signed" ||
-                                      caseItem.status === "Completed"
-                                    ? "outline"
-                                    : caseItem.status === "Rejected"
-                                    ? "destructive"
-                                    : "secondary"
-                                }
-                              >
-                                {caseItem.status === "Completed" ? "Signed" : caseItem.status}
-                              </Badge>
+                              {getStatusBadge(caseItem.status === "Completed" ? "Signed" : caseItem.status)}
                             </TableCell>
                             <TableCell>{caseItem.type_of_incident}</TableCell>
                             <TableCell>{caseItem.contact_email}</TableCell>
