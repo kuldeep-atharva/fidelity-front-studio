@@ -63,16 +63,6 @@ const Wayfinder = () => {
       action_metadata: {},
       failure_reason: null,
     },
-    // {
-    //   id: "default-3",
-    //   title: "Rule Matching",
-    //   description: "Match the case with applicable legal rules and regulations.",
-    //   status: "upcoming",
-    //   duration: "1-2 days",
-    //   tasks: [],
-    //   action_metadata: {},
-    //   failure_reason: null,
-    // },
     {
       id: "default-3",
       title: "Review Process",
@@ -127,10 +117,19 @@ const Wayfinder = () => {
             setSelectedCaseNumber(caseFromUrl.case_number);
             setSelectedCaseId(caseFromUrl.id);
             localStorage.setItem("case_number", caseFromUrl.case_number);
-            setCaseStatus(caseFromUrl.status);
+
+            // Update workflow status and fetch latest case status
+            await updateWorkflowStatus(caseFromUrl.id, caseFromUrl.case_number);
+            const { data: updatedCaseData, error: caseStatusError } = await supabase
+              .from("cases")
+              .select("status")
+              .eq("id", caseFromUrl.id)
+              .single();
+
+            if (caseStatusError || !updatedCaseData) throw caseStatusError;
+            setCaseStatus(updatedCaseData.status);
 
             // Fetch workflow steps for the selected case
-            await updateWorkflowStatus(caseFromUrl.id, caseFromUrl.case_number);
             const { data: stepsData, error: stepsError } = await supabase
               .from("case_workflow_steps")
               .select("*")
@@ -147,7 +146,7 @@ const Wayfinder = () => {
                   );
                   if (
                     signProcessStep &&
-                    signProcessStep.action_status === "Completed"
+                    signProcessStep.action_status === "Signed"
                   ) {
                     return {
                       id: step.id,
@@ -166,7 +165,7 @@ const Wayfinder = () => {
                   title: step.step_name,
                   description: step.description,
                   status:
-                    step.action_status === "Completed"
+                    step.action_status === "Completed" || step.action_status === "Signed" || step.action_status === "Reviewed"
                       ? "completed"
                       : step.action_status === "Rejected"
                       ? "rejected"
@@ -259,7 +258,7 @@ const Wayfinder = () => {
               );
               if (
                 signProcessStep &&
-                signProcessStep.action_status === "Completed"
+                signProcessStep.action_status === "Signed"
               ) {
                 return {
                   id: step.id,
@@ -278,7 +277,7 @@ const Wayfinder = () => {
               title: step.step_name,
               description: step.description,
               status:
-                step.action_status === "Completed"
+                step.action_status === "Completed" || step.action_status === "Signed" || step.action_status === "Reviewed"
                   ? "completed"
                   : step.action_status === "Rejected"
                   ? "rejected"
@@ -336,7 +335,7 @@ const Wayfinder = () => {
             );
             if (
               signProcessStep &&
-              signProcessStep.action_status === "Completed"
+              signProcessStep.action_status === "Signed"
             ) {
               return {
                 id: step.id,
@@ -355,7 +354,7 @@ const Wayfinder = () => {
             title: step.step_name,
             description: step.description,
             status:
-              step.action_status === "Completed"
+              step.action_status === "Completed" || step.action_status === "Signed" || step.action_status === "Reviewed"
                 ? "completed"
                 : step.action_status === "Rejected"
                 ? "rejected"
@@ -510,7 +509,6 @@ const Wayfinder = () => {
         </div>
 
         {loading ? (
-          // <div className="text-center">Loading case details...</div>
           <div className="flex justify-center items-center h-64">
             <div className="custom-loader" />
           </div>

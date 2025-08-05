@@ -19,7 +19,7 @@ export const updateWorkflowStatus = async (caseId: string, caseNumber: string) =
     // Fetch workflow steps
     const { data: steps, error: stepsError } = await supabase
       .from("case_workflow_steps")
-      .select("id, step_name, action_status, action_metadata")
+      .select("id, step_name, action_status, action_metadata, is_active")
       .eq("case_id", caseId)
       .order("step_order", { ascending: true });
 
@@ -79,14 +79,25 @@ export const updateWorkflowStatus = async (caseId: string, caseNumber: string) =
 
     let caseStatus: string | null = null;
 
+    // Map SignCare signerStatus to database status
+    const mapSignerStatus = (status: string): string => {
+      switch (status) {
+        case "Pending":
+          return "In Progress";
+        case "Approved":
+          return "Reviewed";
+        case "Rejected":
+          return "Rejected";
+        case "Signed":
+          return "Signed";
+        default:
+          return "In Progress";
+      }
+    };
+
     // Update Review Process
     if (reviewer && reviewStep) {
-      const newStatus =
-        reviewer.signerStatus === "Approved"
-          ? "Completed"
-          : reviewer.signerStatus === "Rejected"
-          ? "Rejected"
-          : "Pending";
+      const newStatus = mapSignerStatus(reviewer.signerStatus);
 
       if (newStatus !== reviewStep.action_status) {
         await supabase
@@ -100,17 +111,19 @@ export const updateWorkflowStatus = async (caseId: string, caseNumber: string) =
               signer_id: reviewer.signerId,
               invitation_expiry: reviewer.invitationExpireTimeStamp,
             },
+            is_active: newStatus === "Reviewed" ? false : reviewStep.is_active, // Deactivate when Reviewed
           })
           .eq("id", reviewStep.id);
 
         caseStatus =
-          newStatus === "Completed"
+          newStatus === "Reviewed"
             ? "Reviewed"
             : newStatus === "Rejected"
             ? "Rejected by Reviewer"
-            : null;
+            : "In Progress";
 
-        if (newStatus === "Completed" && signStep) {
+        // Activate Sign Process if Review is Reviewed
+        if (newStatus === "Reviewed" && signStep) {
           await supabase
             .from("case_workflow_steps")
             .update({
@@ -126,13 +139,8 @@ export const updateWorkflowStatus = async (caseId: string, caseNumber: string) =
     }
 
     // Update Sign Process
-    if (signer && signStep && (reviewStep?.action_status === "Completed" || documentStatus === "Signed")) {
-      const newStatus =
-        signer.signerStatus === "Signed"
-          ? "Completed"
-          : signer.signerStatus === "Rejected"
-          ? "Rejected"
-          : "Pending";
+    if (signer && signStep && (reviewStep?.action_status === "Reviewed" || documentStatus === "Signed")) {
+      const newStatus = mapSignerStatus(signer.signerStatus);
 
       if (newStatus !== signStep.action_status) {
         await supabase
@@ -146,32 +154,34 @@ export const updateWorkflowStatus = async (caseId: string, caseNumber: string) =
               signer_id: signer.signerId,
               invitation_expiry: signer.invitationExpireTimeStamp,
             },
+            is_active: newStatus === "Signed" ? false : signStep.is_active, // Deactivate when Signed
           })
           .eq("id", signStep.id);
 
         caseStatus =
-          newStatus === "Completed"
+          newStatus === "Signed"
             ? "Signed"
             : newStatus === "Rejected"
             ? "Rejected by Signer"
             : caseStatus;
 
-        if (newStatus === "Completed" && courtFilingStep) {
+        // Activate Court Filing if Sign Process is Signed
+        if (newStatus === "Signed" && courtFilingStep) {
           await supabase
             .from("case_workflow_steps")
             .update({
               is_active: true,
-              action_status: "Completed",
+              action_status: "In Progress",
               action_timestamp: new Date().toISOString(),
             })
             .eq("id", courtFilingStep.id);
-          caseStatus = "Completed";
+          caseStatus = "Signed"; // Keep case status as Signed until Court Filing is completed
         }
       }
     }
 
     // Update case status based on document status
-    if (documentStatus === "Signed" && courtFilingStep && signStep?.action_status === "Completed") {
+    if (documentStatus === "Signed" && courtFilingStep && signStep?.action_status === "Signed") {
       await supabase
         .from("case_workflow_steps")
         .update({

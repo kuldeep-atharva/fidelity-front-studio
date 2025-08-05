@@ -116,18 +116,6 @@ const IncidentReportForm: React.FC = () => {
         step_category: "User Action",
         is_required: true,
       },
-      // {
-      //   step_order: 3,
-      //   step_name: "Rule Matching",
-      //   description: "AI assigns reviewer and signer based on case details",
-      //   estimated_duration: "5 min",
-      //   is_active: true,
-      //   action_type: "Approve",
-      //   action_status: "Completed",
-      //   tasks: JSON.stringify(["AI processes case details", "Assign reviewer and signer"]),
-      //   step_category: "System Action",
-      //   is_required: true,
-      // },
       {
         step_order: 3,
         step_name: "Review Process",
@@ -135,7 +123,7 @@ const IncidentReportForm: React.FC = () => {
         estimated_duration: "1-2 days",
         is_active: true,
         action_type: "Review",
-        action_status: "Pending",
+        action_status: "In Progress",
         tasks: JSON.stringify([
           "Reviewer checks document accuracy",
           "Approve or reject submission",
@@ -154,7 +142,7 @@ const IncidentReportForm: React.FC = () => {
         estimated_duration: "1-2 days",
         is_active: false,
         action_type: "Sign",
-        action_status: "Pending",
+        action_status: "In Progress",
         tasks: JSON.stringify([
           "Signer reviews document",
           "Provide electronic signature",
@@ -173,7 +161,7 @@ const IncidentReportForm: React.FC = () => {
         estimated_duration: "1 hour",
         is_active: false,
         action_type: "Approve",
-        action_status: "Pending",
+        action_status: "In Progress",
         tasks: JSON.stringify([
           "Prepare final submission",
           "File with court system",
@@ -411,6 +399,22 @@ const IncidentReportForm: React.FC = () => {
           (s: any) => s.signerRefId === signerUser.id
         );
 
+        // Map SignCare signerStatus to database status
+        const mapSignerStatus = (status: string): string => {
+          switch (status) {
+            case "Pending":
+              return "In Progress";
+            case "Approved":
+              return "Reviewed";
+            case "Rejected":
+              return "Rejected";
+            case "Signed":
+              return "Signed";
+            default:
+              return "In Progress";
+          }
+        };
+
         const reviewStep = await supabase
           .from("case_workflow_steps")
           .select("id, action_metadata")
@@ -418,18 +422,14 @@ const IncidentReportForm: React.FC = () => {
           .single();
 
         if (reviewStep.data && reviewer) {
+          const newStatus = mapSignerStatus(reviewer.signerStatus);
           await supabase
             .from("case_workflow_steps")
             .update({
-              action_status:
-                reviewer.signerStatus === "Approved"
-                  ? "Completed"
-                  : reviewer.signerStatus === "Rejected"
-                  ? "Rejected"
-                  : "Pending",
+              action_status: newStatus,
               action_timestamp: new Date().toISOString(),
               failure_reason:
-                reviewer.signerStatus === "Rejected"
+                newStatus === "Rejected"
                   ? reviewer.rejectReason || "Reviewer rejected the document"
                   : null,
               action_metadata: {
@@ -440,6 +440,23 @@ const IncidentReportForm: React.FC = () => {
               },
             })
             .eq("id", reviewStep.data.id);
+
+          // Activate Sign Process if Review is Reviewed
+          if (newStatus === "Reviewed") {
+            const signStep = await supabase
+              .from("case_workflow_steps")
+              .select("id, action_metadata")
+              .match({ case_id: caseId, step_name: "Sign Process" })
+              .single();
+            if (signStep.data) {
+              await supabase
+                .from("case_workflow_steps")
+                .update({
+                  is_active: true,
+                })
+                .eq("id", signStep.data.id);
+            }
+          }
         }
 
         const signStep = await supabase
@@ -449,18 +466,14 @@ const IncidentReportForm: React.FC = () => {
           .single();
 
         if (signStep.data && signer) {
+          const newStatus = mapSignerStatus(signer.signerStatus);
           await supabase
             .from("case_workflow_steps")
             .update({
-              action_status:
-                signer.signerStatus === "Signed"
-                  ? "Completed"
-                  : signer.signerStatus === "Rejected"
-                  ? "Rejected"
-                  : "Pending",
+              action_status: newStatus,
               action_timestamp: new Date().toISOString(),
               failure_reason:
-                signer.signerStatus === "Rejected"
+                newStatus === "Rejected"
                   ? signer.rejectReason || "Signer rejected the document"
                   : null,
               action_metadata: {
@@ -471,6 +484,25 @@ const IncidentReportForm: React.FC = () => {
               },
             })
             .eq("id", signStep.data.id);
+
+          // Activate Court Filing if Sign Process is Signed
+          if (newStatus === "Signed") {
+            const courtFilingStep = await supabase
+              .from("case_workflow_steps")
+              .select("id")
+              .match({ case_id: caseId, step_name: "Court Filing" })
+              .single();
+            if (courtFilingStep.data) {
+              await supabase
+                .from("case_workflow_steps")
+                .update({
+                  is_active: true,
+                  action_status: "In Progress",
+                  action_timestamp: new Date().toISOString(),
+                })
+                .eq("id", courtFilingStep.data.id);
+            }
+          }
         }
 
         const courtFilingStep = await supabase
@@ -690,9 +722,6 @@ const IncidentReportForm: React.FC = () => {
                 Cancel
               </Button>
               <div className="flex space-x-3">
-                {/* <Button variant="outline" onClick={() => setIsChatOpen(true)}>
-                  Get Help
-                </Button> */}
                 <Button
                   onClick={handleStep2}
                   className="bg-sky-600 hover:bg-sky-700"
@@ -855,9 +884,6 @@ const IncidentReportForm: React.FC = () => {
                 ← Back
               </Button>
               <div className="flex space-x-3">
-                {/* <Button variant="outline" onClick={() => setIsChatOpen(true)}>
-                  Get Help
-                </Button> */}
                 <Button onClick={validateAndPreview} disabled={submitting}>
                   {submitting ? "Submitting..." : "Review & Submit"}
                 </Button>
