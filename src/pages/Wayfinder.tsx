@@ -28,9 +28,7 @@ const Wayfinder = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<any[]>([]);
   const [cases, setCases] = useState<any[]>([]);
-  const [selectedCaseNumber, setSelectedCaseNumber] = useState<string | null>(
-    null
-  );
+  const [selectedCaseNumber, setSelectedCaseNumber] = useState<string | null>(null);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [caseStatus, setCaseStatus] = useState<string | null>(null);
@@ -41,8 +39,7 @@ const Wayfinder = () => {
     {
       id: "default-1",
       title: "Case Assessment",
-      description:
-        "Complete the initial case assessment form to start the legal process.",
+      description: "Complete the initial case assessment form to start the legal process.",
       status: "current",
       duration: "1-2 days",
       tasks: [
@@ -104,7 +101,6 @@ const Wayfinder = () => {
         const { data: casesData, error: casesError } = await supabase
           .from("cases")
           .select("id, case_number, status")
-          .neq('status', 'New')
           .order("created_at", { ascending: false });
 
         if (casesError) throw casesError;
@@ -215,7 +211,6 @@ const Wayfinder = () => {
   // Fetch workflow steps when a case is selected via dropdown
   useEffect(() => {
     if (!selectedCaseId || caseId === selectedCaseId) {
-      // Skip if no case selected or if caseId from URL already handled
       return;
     }
 
@@ -251,45 +246,23 @@ const Wayfinder = () => {
         if (error) throw error;
 
         setWorkflowSteps(
-          data.map((step, index) => {
-            if (step.step_name === "Court Filing" && index === 4) {
-              const signProcessStep = data.find(
-                (s) => s.step_name === "Sign Process"
-              );
-              if (
-                signProcessStep &&
-                signProcessStep.action_status === "Signed"
-              ) {
-                return {
-                  id: step.id,
-                  title: step.step_name,
-                  description: step.description,
-                  status: "current",
-                  duration: step.estimated_duration,
-                  tasks: JSON.parse(step.tasks || "[]"),
-                  action_metadata: step.action_metadata || {},
-                  failure_reason: step.failure_reason,
-                };
-              }
-            }
-            return {
-              id: step.id,
-              title: step.step_name,
-              description: step.description,
-              status:
-                step.action_status === "Completed" || step.action_status === "Signed" || step.action_status === "Reviewed"
-                  ? "completed"
-                  : step.action_status === "Rejected"
-                  ? "rejected"
-                  : step.is_active
-                  ? "current"
-                  : "upcoming",
-              duration: step.estimated_duration,
-              tasks: JSON.parse(step.tasks || "[]"),
-              action_metadata: step.action_metadata || {},
-              failure_reason: step.failure_reason,
-            };
-          })
+          data.map((step) => ({
+            id: step.id,
+            title: step.step_name,
+            description: step.description,
+            status:
+              step.action_status === "Completed" || step.action_status === "Signed" || step.action_status === "Reviewed"
+                ? "completed"
+                : step.action_status === "Rejected"
+                ? "rejected"
+                : step.is_active
+                ? "current"
+                : "upcoming",
+            duration: step.estimated_duration,
+            tasks: JSON.parse(step.tasks || "[]"),
+            action_metadata: step.action_metadata || {},
+            failure_reason: step.failure_reason,
+          }))
         );
       } catch (error) {
         console.error("Failed to fetch workflow steps:", error);
@@ -328,45 +301,23 @@ const Wayfinder = () => {
       if (error) throw error;
 
       setWorkflowSteps(
-        data.map((step, index) => {
-          if (step.step_name === "Court Filing" && index === 4) {
-            const signProcessStep = data.find(
-              (s) => s.step_name === "Sign Process"
-            );
-            if (
-              signProcessStep &&
-              signProcessStep.action_status === "Signed"
-            ) {
-              return {
-                id: step.id,
-                title: step.step_name,
-                description: step.description,
-                status: "current",
-                duration: step.estimated_duration,
-                tasks: JSON.parse(step.tasks || "[]"),
-                action_metadata: step.action_metadata || {},
-                failure_reason: step.failure_reason,
-              };
-            }
-          }
-          return {
-            id: step.id,
-            title: step.step_name,
-            description: step.description,
-            status:
-              step.action_status === "Completed" || step.action_status === "Signed" || step.action_status === "Reviewed"
-                ? "completed"
-                : step.action_status === "Rejected"
-                ? "rejected"
-                : step.is_active
-                ? "current"
-                : "upcoming",
-            duration: step.estimated_duration,
-            tasks: JSON.parse(step.tasks || "[]"),
-            action_metadata: step.action_metadata || {},
-            failure_reason: step.failure_reason,
-          };
-        })
+        data.map((step) => ({
+          id: step.id,
+          title: step.step_name,
+          description: step.description,
+          status:
+            step.action_status === "Completed" || step.action_status === "Signed" || step.action_status === "Reviewed"
+              ? "completed"
+              : step.action_status === "Rejected"
+              ? "rejected"
+              : step.is_active
+              ? "current"
+              : "upcoming",
+          duration: step.estimated_duration,
+          tasks: JSON.parse(step.tasks || "[]"),
+          action_metadata: step.action_metadata || {},
+          failure_reason: step.failure_reason,
+        }))
       );
 
       const { data: caseData } = await supabase
@@ -406,6 +357,8 @@ const Wayfinder = () => {
   const stepHandler = (stepName: string) => {
     if (stepName === "Case Assessment") {
       navigate("/step1");
+    } else if (stepName === "Document Preparation") {
+      navigate(`/step1/${selectedCaseId}?step=2`);
     }
   };
 
@@ -432,9 +385,7 @@ const Wayfinder = () => {
         <div className="text-center space-y-4">
           <h1 className="text-3xl font-bold text-primary">Wayfinder</h1>
           <div className="space-y-2">
-            <h2 className="text-xl font-semibold text-primary">
-              Your Legal Journey
-            </h2>
+            <h2 className="text-xl font-semibold text-primary">Your Legal Journey</h2>
             {cases.length > 0 && (
               <p className="text-muted-foreground max-w-2xl mx-auto">
                 Select a case to view its workflow.
@@ -456,8 +407,7 @@ const Wayfinder = () => {
               <SelectTrigger className="w-[300px]">
                 <SelectValue placeholder="Select a case">
                   {selectedCaseNumber
-                    ? cases.find((c) => c.case_number === selectedCaseNumber)
-                        ?.case_number
+                    ? cases.find((c) => c.case_number === selectedCaseNumber)?.case_number
                     : "Select none"}
                 </SelectValue>
               </SelectTrigger>
@@ -478,14 +428,12 @@ const Wayfinder = () => {
               <RefreshCw className="w-4 h-4" />
               <span>Refresh Status</span>
             </Button>
-            {selectedCaseNumber && (
-              <Button
-                onClick={() => navigate("/step1")}
-                className="flex items-center space-x-2 bg-green-600 hover:bg-green-700"
-              >
-                <span>Start New Case</span>
-              </Button>
-            )}
+            <Button
+              onClick={() => navigate("/step1")}
+              className="flex items-center space-x-2 bg-green-600 hover:bg-green-700"
+            >
+              <span>Start New Case</span>
+            </Button>
           </div>
 
           <div className="flex justify-center space-x-8 mt-6">
@@ -556,47 +504,32 @@ const Wayfinder = () => {
                           Reason: {step.failure_reason}
                         </p>
                       )}
-                      {(step.status === "current" ||
-                        step.status === "completed") &&
+                      {(step.status === "current" || step.status === "completed") &&
                         step.tasks && (
                           <div className="space-y-3">
-                            <h4 className="font-medium">
-                              What you need to do:
-                            </h4>
+                            <h4 className="font-medium">What you need to do:</h4>
                             <ul className="space-y-2">
-                              {step.tasks.map(
-                                (task: string, taskIndex: number) => (
-                                  <li
-                                    key={taskIndex}
-                                    className="flex items-start space-x-2"
-                                  >
-                                    <span className="text-primary">•</span>
-                                    <span className="text-sm">{task}</span>
-                                  </li>
-                                )
-                              )}
+                              {step.tasks.map((task: string, taskIndex: number) => (
+                                <li key={taskIndex} className="flex items-start space-x-2">
+                                  <span className="text-primary">•</span>
+                                  <span className="text-sm">{task}</span>
+                                </li>
+                              ))}
                             </ul>
-                            {(step.title === "Review Process" ||
-                              step.title === "Sign Process") &&
+                            {(step.title === "Review Process" || step.title === "Sign Process") &&
                               step.action_metadata && (
                                 <div className="mt-4 space-y-2">
                                   <p className="text-sm">
                                     <strong>
-                                      {step.title === "Review Process"
-                                        ? "Reviewer"
-                                        : "Signer"}{" "}
-                                      Email:
+                                      {step.title === "Review Process" ? "Reviewer" : "Signer"} Email:
                                     </strong>{" "}
                                     {step.action_metadata[
-                                      step.title === "Review Process"
-                                        ? "reviewer_email"
-                                        : "signer_email"
+                                      step.title === "Review Process" ? "reviewer_email" : "signer_email"
                                     ] || "N/A"}
                                   </p>
                                   <p className="text-sm">
                                     <strong>SignCare Document ID:</strong>{" "}
-                                    {step.action_metadata.signcare_doc_id ||
-                                      "N/A"}
+                                    {step.action_metadata.signcare_doc_id || "N/A"}
                                   </p>
                                   {step.action_metadata.signer_id && (
                                     <p className="text-sm">
@@ -607,30 +540,37 @@ const Wayfinder = () => {
                                   {step.action_metadata.invitation_expiry && (
                                     <p className="text-sm">
                                       <strong>Invitation Expiry:</strong>{" "}
-                                      {new Date(
-                                        step.action_metadata.invitation_expiry
-                                      ).toLocaleString()}
+                                      {new Date(step.action_metadata.invitation_expiry).toLocaleString()}
                                     </p>
                                   )}
                                 </div>
                               )}
-                            {step.status === "current" &&
-                              step.title === "Case Assessment" && (
-                                <div className="flex space-x-3 mt-4">
-                                  <Button
-                                    onClick={() => stepHandler(step.title)}
-                                  >
-                                    Start New Case
-                                    <ArrowRight className="w-4 h-4 ml-2" />
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => setIsOpen(true)}
-                                  >
-                                    Get Help
-                                  </Button>
-                                </div>
-                              )}
+                            {step.status === "current" && (
+                              <div className="flex space-x-3 mt-4">
+                                {step.title === "Case Assessment" && (
+                                  <>
+                                    <Button onClick={() => stepHandler(step.title)}>
+                                      Start New Case
+                                      <ArrowRight className="w-4 h-4 ml-2" />
+                                    </Button>
+                                    <Button variant="outline" onClick={() => setIsOpen(true)}>
+                                      Get Help
+                                    </Button>
+                                  </>
+                                )}
+                                {step.title === "Document Preparation" && (
+                                  <>
+                                    <Button onClick={() => stepHandler(step.title)}>
+                                      Upload Documents
+                                      <ArrowRight className="w-4 h-4 ml-2" />
+                                    </Button>
+                                    <Button variant="outline" onClick={() => setIsOpen(true)}>
+                                      Get Help
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                     </div>

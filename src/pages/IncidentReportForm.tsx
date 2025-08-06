@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { supabase } from "@/utils/supabaseClient";
 import * as Dialog from "@radix-ui/react-dialog";
 import FinalSubmissionPdf from "./FinalSubmissionPdf";
@@ -11,6 +11,12 @@ import { matchRuleUsingOpenAI } from "@/utils/ruleEngine";
 import { updateWorkflowStatus } from "@/utils/workflowUpdater";
 
 const IncidentReportForm: React.FC = () => {
+  const { caseId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const queryParams = new URLSearchParams(location.search);
+  const initialStep = queryParams.get("step") === "2" ? 2 : 1;
+
   const [form, setForm] = useState({
     first_name: "",
     last_name: "",
@@ -23,7 +29,7 @@ const IncidentReportForm: React.FC = () => {
     signer_email: "",
     reviewer_email: "",
     pdf_url: "",
-    status: "New",
+    status: "Draft",
     rule_applied: "",
   });
 
@@ -34,11 +40,72 @@ const IncidentReportForm: React.FC = () => {
   const [formData, setFormData] = useState<{ [key: string]: string }>({});
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(initialStep);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
+  const [currentCaseId, setCurrentCaseId] = useState<string | null>(caseId || null);
+  const [loading, setLoading] = useState(!!caseId);
 
-  const navigate = useNavigate();
+  // Fetch case data if caseId is provided
+  useEffect(() => {
+    if (caseId) {
+      const fetchCaseData = async () => {
+        setLoading(true);
+        try {
+          const { data, error } = await supabase
+            .from("cases")
+            .select("*")
+            .eq("id", caseId)
+            .single();
+
+          if (error) throw error;
+
+          setForm({
+            first_name: data.first_name || "",
+            last_name: data.last_name || "",
+            date_of_incident: data.date_of_incident || "",
+            type_of_incident: data.type_of_incident || "",
+            contact_phone: data.contact_phone || "",
+            contact_email: data.contact_email || "",
+            case_description: data.case_description || "",
+            case_number: data.case_number || "",
+            signer_email: data.signer_email || "",
+            reviewer_email: data.reviewer_email || "",
+            pdf_url: data.pdf_url || "",
+            status: data.status || "Draft",
+            rule_applied: data.rule_applied || "",
+          });
+
+          // Fetch documents (assuming stored in action_metadata or a case_documents table)
+          const { data: stepsData, error: stepsError } = await supabase
+            .from("case_workflow_steps")
+            .select("action_metadata")
+            .eq("case_id", caseId)
+            .eq("step_name", "Document Preparation")
+            .single();
+
+          if (stepsError) throw stepsError;
+
+          // Assuming documents are stored as URLs in action_metadata
+          const documentUrls = stepsData?.action_metadata?.document_urls || [];
+          const fetchedDocuments = await Promise.all(
+            documentUrls.map(async (url: string, index: number) => {
+              const response = await fetch(url);
+              const blob = await response.blob();
+              return new File([blob], `document-${index}.pdf`, { type: "application/pdf" });
+            })
+          );
+          setDocuments(fetchedDocuments);
+        } catch (error) {
+          console.error("Failed to fetch case data:", error);
+          setValidationError("Failed to load case data. Please try again.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      fetchCaseData();
+    }
+  }, [caseId]);
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -47,21 +114,16 @@ const IncidentReportForm: React.FC = () => {
   ) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
-
     setValidationError(null);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
-      const pdfFiles = newFiles.filter(
-        (file) => file.type === "application/pdf"
-      );
+      const pdfFiles = newFiles.filter((file) => file.type === "application/pdf");
 
       if (pdfFiles.length !== newFiles.length) {
-        setValidationError(
-          "Only PDF files are allowed. Non-PDF files were filtered out."
-        );
+        setValidationError("Only PDF files are allowed. Non-PDF files were filtered out.");
       } else {
         setValidationError(null);
       }
@@ -81,7 +143,7 @@ const IncidentReportForm: React.FC = () => {
     caseId: string,
     reviewerEmail: string,
     signerEmail: string,
-    signcareDocId: string
+    signcareDocId: string | null = null
   ) => {
     const workflowSteps = [
       {
@@ -89,7 +151,7 @@ const IncidentReportForm: React.FC = () => {
         step_name: "Case Assessment",
         description: "Complete the incident report form",
         estimated_duration: "15 min",
-        is_active: true,
+        is_active: false,
         action_type: "Approve",
         action_status: "Completed",
         tasks: JSON.stringify([
@@ -107,7 +169,7 @@ const IncidentReportForm: React.FC = () => {
         estimated_duration: "30 min",
         is_active: true,
         action_type: "Approve",
-        action_status: "Completed",
+        action_status: "In Progress",
         tasks: JSON.stringify([
           "Upload relevant PDF documents",
           "Review combined PDF",
@@ -121,7 +183,7 @@ const IncidentReportForm: React.FC = () => {
         step_name: "Review Process",
         description: "Reviewer evaluates the submitted documents",
         estimated_duration: "1-2 days",
-        is_active: true,
+        is_active: false,
         action_type: "Review",
         action_status: "In Progress",
         tasks: JSON.stringify([
@@ -196,76 +258,162 @@ const IncidentReportForm: React.FC = () => {
         .select("id")
         .single();
 
-      if (error)
-        throw new Error(
-          `Failed to insert step ${step.step_name}: ${error.message}`
-        );
+      if (error) throw new Error(`Failed to insert step ${step.step_name}: ${error.message}`);
       previousStepId = data.id;
     }
   };
 
-  const handleFinalSubmit = async (pdfBase64: string, pageNum: number) => {
-    console.log("Page Number for Signature:", pageNum);
+  const handleStep2 = async () => {
+    if (!validateStep1()) return;
+
     setSubmitting(true);
     try {
-      const generatedCaseNumberVal = generateCaseNumber();
-      localStorage.setItem("case_number", generatedCaseNumberVal);
-      const newCase = {
-        first_name: form.first_name,
-        last_name: form.last_name,
-        date_of_incident: form.date_of_incident,
-        type_of_incident: form.type_of_incident,
-        contact_phone: form.contact_phone,
-        contact_email: form.contact_email,
-        case_description: form.case_description,
-        case_number: generatedCaseNumberVal,
-        pdf_url: pdfBase64,
-        signer_email: form.signer_email,
-        reviewer_email: form.reviewer_email,
-        status: form.status,
-        rule_applied: form.rule_applied,
-      };
-      const summaryCase = {
-        type_of_incident: newCase.type_of_incident,
-        date_of_incident: newCase.date_of_incident,
-        contact_email: newCase.contact_email,
-        case_description: newCase.case_description,
-      };
-      const { data: rules, error: rulesError } = await supabase
-        .from("rules")
-        .select("*")
-        .eq("status", "active");
-      if (rulesError || !rules) throw new Error("Failed to fetch rules");
+      let caseIdToUse = currentCaseId;
+      let generatedCaseNumber = form.case_number;
 
-      const ruleMatch = await matchRuleUsingOpenAI(summaryCase, rules);
-      const updatedCase = {
-        ...newCase,
-        signer_email:
-          ruleMatch.signer_email ||
-          newCase.signer_email ||
-          newCase.contact_email,
-        reviewer_email:
-          ruleMatch.reviewer_email ||
-          newCase.reviewer_email ||
-          "defaultreviewer@yopmail.com",
-        rule_applied: ruleMatch.rule_id || newCase.rule_applied,
-      };
+      if (!caseIdToUse) {
+        generatedCaseNumber = generateCaseNumber();
+        const newCase = {
+          first_name: form.first_name,
+          last_name: form.last_name,
+          date_of_incident: form.date_of_incident,
+          type_of_incident: form.type_of_incident,
+          contact_phone: form.contact_phone,
+          contact_email: form.contact_email,
+          case_description: form.case_description,
+          case_number: generatedCaseNumber,
+          signer_email: form.signer_email,
+          reviewer_email: form.reviewer_email,
+          pdf_url: "",
+          status: "Draft",
+          rule_applied: "",
+        };
 
-      const { data: caseData, error: insertError } = await supabase
+        const summaryCase = {
+          type_of_incident: newCase.type_of_incident,
+          date_of_incident: newCase.date_of_incident,
+          contact_email: newCase.contact_email,
+          case_description: newCase.case_description,
+        };
+
+        const { data: rules, error: rulesError } = await supabase
+          .from("rules")
+          .select("*")
+          .eq("status", "active");
+
+        if (rulesError || !rules) throw new Error("Failed to fetch rules");
+
+        const ruleMatch = await matchRuleUsingOpenAI(summaryCase, rules);
+        const updatedCase = {
+          ...newCase,
+          signer_email: ruleMatch.signer_email || newCase.signer_email || newCase.contact_email,
+          reviewer_email: ruleMatch.reviewer_email || newCase.reviewer_email || "defaultreviewer@yopmail.com",
+          rule_applied: ruleMatch.rule_id || newCase.rule_applied,
+        };
+
+        const { data: caseData, error: insertError } = await supabase
+          .from("cases")
+          .insert([updatedCase])
+          .select("id")
+          .single();
+
+        if (insertError) throw insertError;
+
+        caseIdToUse = caseData.id;
+        setCurrentCaseId(caseIdToUse);
+        localStorage.setItem("case_number", generatedCaseNumber);
+
+        await initializeWorkflowSteps(caseIdToUse, updatedCase.reviewer_email, updatedCase.signer_email);
+      } else {
+        // Update existing case
+        const { error: updateError } = await supabase
+          .from("cases")
+          .update({
+            first_name: form.first_name,
+            last_name: form.last_name,
+            date_of_incident: form.date_of_incident,
+            type_of_incident: form.type_of_incident,
+            contact_phone: form.contact_phone,
+            contact_email: form.contact_email,
+            case_description: form.case_description,
+            signer_email: form.signer_email,
+            reviewer_email: form.reviewer_email,
+          })
+          .eq("id", caseIdToUse);
+
+        if (updateError) throw updateError;
+      }
+
+      setCurrentStep(2);
+      navigate(`/step1/${caseIdToUse}?step=2`);
+    } catch (error: any) {
+      setValidationError(error.message || "Failed to create or update case. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleFinalSubmit = async (pdfBase64: string, pageNum: number) => {
+    setSubmitting(true);
+    try {
+      if (!currentCaseId) throw new Error("Case ID is missing");
+
+      // Upload documents to Supabase storage (or update action_metadata)
+      // const documentUrls: string[] = [];
+      // for (const file of documents) {
+      //   const { data, error } = await supabase.storage
+      //     .from("case-documents")
+      //     .upload(`${currentCaseId}/${file.name}`, file);
+
+      //   if (error) throw error;
+      //   const publicUrl = supabase.storage.from("case-documents").getPublicUrl(data.path).data.publicUrl;
+      //   documentUrls.push(publicUrl);
+      // }
+      // Convert documents to base64 data URLs and store in action_metadata
+      const documentUrls: string[] = [];
+      for (const file of documents) {
+        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        documentUrls.push(dataUrl);
+      }
+
+      // Update Document Preparation step with document URLs
+      await supabase
+        .from("case_workflow_steps")
+        .update({
+          action_metadata: { document_urls: documentUrls },
+        })
+        .eq("case_id", currentCaseId)
+        .eq("step_name", "Document Preparation");
+
+      // Update case with PDF and status
+      const { error: updateError } = await supabase
         .from("cases")
-        .insert([updatedCase])
-        .select("id")
-        .single();
-      if (insertError) throw insertError;
+        .update({ pdf_url: pdfBase64, status: "In Progress" })
+        .eq("id", currentCaseId);
 
-      const caseId = caseData.id;
-      setCurrentCaseId(caseId);
+      if (updateError) throw updateError;
+
+      // Fetch case details
+      const { data: caseData, error: caseError } = await supabase
+        .from("cases")
+        .select("case_number, reviewer_email, signer_email, contact_phone, type_of_incident, contact_email")
+        .eq("id", currentCaseId)
+        .single();
+
+      if (caseError || !caseData) throw new Error("Failed to fetch case details");
+
+      const { case_number, reviewer_email, signer_email, contact_phone, type_of_incident, contact_email } = caseData;
 
       // Fetch reviewer and signer user records
       const { data: reviewerUser, error: reviewerError } = await supabase
         .from("users")
         .select("full_name, email, role, id")
-        .eq("email", updatedCase.reviewer_email)
+        .eq("email", reviewer_email)
         .single();
 
       if (reviewerError) throw new Error("Reviewer not found");
@@ -273,7 +421,7 @@ const IncidentReportForm: React.FC = () => {
       const { data: signerUser, error: signerError } = await supabase
         .from("users")
         .select("full_name, email, role, id")
-        .eq("email", updatedCase.signer_email)
+        .eq("email", signer_email)
         .single();
 
       if (signerError) throw new Error("Signer not found");
@@ -281,10 +429,10 @@ const IncidentReportForm: React.FC = () => {
       const signcareResponse = await axios.post(
         `${import.meta.env.VITE_API_SC_BASE}/esign/request`,
         {
-          referenceId: updatedCase.case_number,
+          referenceId: case_number,
           skipVerificationCode: false,
           documentInfo: {
-            name: `Incident Report - ${updatedCase.case_number}`,
+            name: `Incident Report - ${case_number}`,
             content: pdfBase64,
           },
           supportingDocuments: [],
@@ -300,7 +448,7 @@ const IncidentReportForm: React.FC = () => {
               aadhaarOptions: null,
               expiryDate: null,
               emailReminderDays: null,
-              mobileNo: updatedCase.contact_phone,
+              mobileNo: contact_phone,
               order: 1,
               userReferenceId: reviewerUser.id,
               signAppearance: 5,
@@ -324,7 +472,7 @@ const IncidentReportForm: React.FC = () => {
               aadhaarOptions: null,
               expiryDate: null,
               emailReminderDays: null,
-              mobileNo: updatedCase.contact_phone,
+              mobileNo: contact_phone,
               order: 2,
               userReferenceId: signerUser.id,
               signAppearance: 5,
@@ -345,8 +493,8 @@ const IncidentReportForm: React.FC = () => {
               ],
             },
           ],
-          descriptionForInvitee: `Incident Report for ${updatedCase.type_of_incident}`,
-          finalCopyRecipientsEmailId: updatedCase.contact_email,
+          descriptionForInvitee: `Incident Report for ${type_of_incident}`,
+          finalCopyRecipientsEmailId: contact_email,
         },
         {
           headers: {
@@ -365,21 +513,50 @@ const IncidentReportForm: React.FC = () => {
       await supabase
         .from("cases")
         .update({ signcare_doc_id: signcareDocId })
-        .eq("id", caseId);
+        .eq("id", currentCaseId);
 
-      await initializeWorkflowSteps(
-        caseId,
-        updatedCase.reviewer_email,
-        updatedCase.signer_email,
-        signcareDocId
-      );
+      // Update workflow steps with signcare_doc_id
+      await supabase
+        .from("case_workflow_steps")
+        .update({
+          action_metadata: {
+            reviewer_email,
+            signcare_doc_id: signcareDocId,
+          },
+          is_active: true,
+          action_status: "In Progress",
+        })
+        .eq("case_id", currentCaseId)
+        .eq("step_name", "Review Process");
+
+      await supabase
+        .from("case_workflow_steps")
+        .update({
+          action_metadata: {
+            signer_email,
+            signcare_doc_id: signcareDocId,
+          },
+        })
+        .eq("case_id", currentCaseId)
+        .eq("step_name", "Sign Process");
+
+      // Update Document Preparation step to Completed
+      await supabase
+        .from("case_workflow_steps")
+        .update({
+          is_active: false,
+          action_status: "Completed",
+          action_timestamp: new Date().toISOString(),
+        })
+        .eq("case_id", currentCaseId)
+        .eq("step_name", "Document Preparation");
 
       // Fetch initial status from SignCare
       const statusResponse = await axios.post(
         `${import.meta.env.VITE_API_SC_BASE}/esign/status`,
         {
           documentId: signcareDocId,
-          documentReferenceId: updatedCase.case_number,
+          documentReferenceId: case_number,
         },
         {
           headers: {
@@ -392,14 +569,9 @@ const IncidentReportForm: React.FC = () => {
       if (statusResponse.status === 200 && statusResponse.data.success) {
         const { documentStatus, signerInfo } = statusResponse.data.data;
 
-        const reviewer = signerInfo.find(
-          (s: any) => s.signerRefId === reviewerUser.id
-        );
-        const signer = signerInfo.find(
-          (s: any) => s.signerRefId === signerUser.id
-        );
+        const reviewer = signerInfo.find((s: any) => s.signerRefId === reviewerUser.id);
+        const signer = signerInfo.find((s: any) => s.signerRefId === signerUser.id);
 
-        // Map SignCare signerStatus to database status
         const mapSignerStatus = (status: string): string => {
           switch (status) {
             case "Pending":
@@ -418,7 +590,7 @@ const IncidentReportForm: React.FC = () => {
         const reviewStep = await supabase
           .from("case_workflow_steps")
           .select("id, action_metadata")
-          .match({ case_id: caseId, step_name: "Review Process" })
+          .match({ case_id: currentCaseId, step_name: "Review Process" })
           .single();
 
         if (reviewStep.data && reviewer) {
@@ -441,12 +613,11 @@ const IncidentReportForm: React.FC = () => {
             })
             .eq("id", reviewStep.data.id);
 
-          // Activate Sign Process if Review is Reviewed
           if (newStatus === "Reviewed") {
             const signStep = await supabase
               .from("case_workflow_steps")
-              .select("id, action_metadata")
-              .match({ case_id: caseId, step_name: "Sign Process" })
+              .select("id")
+              .match({ case_id: currentCaseId, step_name: "Sign Process" })
               .single();
             if (signStep.data) {
               await supabase
@@ -462,7 +633,7 @@ const IncidentReportForm: React.FC = () => {
         const signStep = await supabase
           .from("case_workflow_steps")
           .select("id, action_metadata")
-          .match({ case_id: caseId, step_name: "Sign Process" })
+          .match({ case_id: currentCaseId, step_name: "Sign Process" })
           .single();
 
         if (signStep.data && signer) {
@@ -485,12 +656,11 @@ const IncidentReportForm: React.FC = () => {
             })
             .eq("id", signStep.data.id);
 
-          // Activate Court Filing if Sign Process is Signed
           if (newStatus === "Signed") {
             const courtFilingStep = await supabase
               .from("case_workflow_steps")
               .select("id")
-              .match({ case_id: caseId, step_name: "Court Filing" })
+              .match({ case_id: currentCaseId, step_name: "Court Filing" })
               .single();
             if (courtFilingStep.data) {
               await supabase
@@ -508,7 +678,7 @@ const IncidentReportForm: React.FC = () => {
         const courtFilingStep = await supabase
           .from("case_workflow_steps")
           .select("id")
-          .match({ case_id: caseId, step_name: "Court Filing" })
+          .match({ case_id: currentCaseId, step_name: "Court Filing" })
           .single();
 
         if (courtFilingStep.data && documentStatus === "Signed") {
@@ -532,12 +702,12 @@ const IncidentReportForm: React.FC = () => {
                 ? "Rejected"
                 : documentStatus === "Pending"
                 ? "In Progress"
-                : "New",
+                : "Draft",
           })
-          .eq("id", caseId);
+          .eq("id", currentCaseId);
       }
 
-      await updateWorkflowStatus(caseId, updatedCase.case_number);
+      await updateWorkflowStatus(currentCaseId, case_number);
 
       setIsModalOpen(true);
 
@@ -553,7 +723,7 @@ const IncidentReportForm: React.FC = () => {
         signer_email: "",
         reviewer_email: "",
         pdf_url: "",
-        status: "New",
+        status: "Draft",
         rule_applied: "",
       });
       setDocuments([]);
@@ -569,70 +739,65 @@ const IncidentReportForm: React.FC = () => {
       setValidationError("First name is required.");
       return false;
     }
-
     if (!form.last_name) {
       setValidationError("Last name is required.");
       return false;
     }
-
     if (!form.contact_phone) {
       setValidationError("Contact Phone Number is required.");
       return false;
     }
-
     if (!/^\d{10}$/.test(form.contact_phone)) {
       setValidationError("Contact phone number must be exactly 10 digits.");
       return false;
     }
-    
     if (form.contact_phone.startsWith("0")) {
       setValidationError("Contact phone number cannot start with 0.");
       return false;
     }
-
     if (!form.contact_email) {
       setValidationError("Email is required.");
       return false;
     }
-
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(form.contact_email)) {
       setValidationError("Please enter a valid email address.");
       return false;
     }
-
     if (!form.date_of_incident) {
       setValidationError("Date of incident is required.");
       return false;
     }
-
     if (!form.type_of_incident) {
       setValidationError("Type of incident is required.");
       return false;
     }
-
     setValidationError(null);
     return true;
-  };
-
-  const handleStep2 = () => {
-    if (validateStep1()) {
-      setCurrentStep(2);
-    }
   };
 
   const handleBackToStep1 = () => {
     setCurrentStep(1);
     setValidationError(null);
+    navigate(`/step1/${currentCaseId}?step=1`);
   };
 
   const validateAndPreview = () => {
     if (!validateStep1()) return;
-
     setFormData(form);
     setUploadedFiles(documents);
     setPdfOpen(true);
   };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex justify-center items-center h-64">
+          <div className="custom-loader" />
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -647,18 +812,10 @@ const IncidentReportForm: React.FC = () => {
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {[
-                "first_name",
-                "last_name",
-                "contact_phone",
-                "contact_email",
-              ].map((field) => (
+              {["first_name", "last_name", "contact_phone", "contact_email"].map((field) => (
                 <div key={field}>
                   <label className="block text-sm mb-1 font-medium capitalize">
-                    {field === "contact_phone"
-                      ? "Contact Phone Number"
-                      : field.replace("_", " ")}{" "}
-                    *
+                    {field === "contact_phone" ? "Contact Phone Number" : field.replace("_", " ")} *
                   </label>
                   <input
                     name={field}
@@ -701,7 +858,7 @@ const IncidentReportForm: React.FC = () => {
             </div>
             <div className="grid mt-6">
               <label className="block text-sm mb-1 font-medium">
-                Description*
+                Description *
               </label>
               <textarea
                 placeholder="Describe the incident in detail"
@@ -718,15 +875,16 @@ const IncidentReportForm: React.FC = () => {
             )}
 
             <div className="flex justify-between mt-8">
-              <Button onClick={() => navigate("/wayfinder")} variant="outline">
+              <Button onClick={() => navigate(`/wayfinder/${currentCaseId}`)} variant="outline">
                 Cancel
               </Button>
               <div className="flex space-x-3">
                 <Button
                   onClick={handleStep2}
                   className="bg-sky-600 hover:bg-sky-700"
+                  disabled={submitting}
                 >
-                  Next Step →
+                  {submitting ? "Creating Case..." : "Next Step →"}
                 </Button>
               </div>
             </div>
@@ -739,8 +897,7 @@ const IncidentReportForm: React.FC = () => {
               Step 2: Upload Supporting Documents
             </h2>
             <p className="text-center text-gray-600 mb-8">
-              Upload any supporting documents related to your incident
-              (optional)
+              Upload any supporting documents related to your incident (optional)
             </p>
 
             <div className="border-2 border-dashed border-sky-300 rounded-lg p-8 mb-6 bg-gradient-to-br from-sky-50 to-purple-50">
