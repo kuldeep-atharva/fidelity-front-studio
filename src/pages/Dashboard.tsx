@@ -1,13 +1,14 @@
 import Layout from "@/components/Layout";
 import StatsCard from "@/components/StatsCard";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, FileText, AlertCircle, MessageSquare, Download, Loader2 } from "lucide-react";
+import { Calendar, FileText, AlertCircle, MessageSquare, Download, Loader2, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabaseClient";
 import { format, formatDistanceToNow, isAfter, addDays, addHours } from "date-fns";
-import { toast } from "sonner"; // or your preferred toast library
+import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Types
 interface CaseWorkflowStep {
@@ -19,6 +20,17 @@ interface CaseWorkflowStep {
   estimated_duration: string | null;
   case_id: string;
   description: string | null;
+  action_type: string | null;
+  step_category: string | null;
+  is_required: boolean;
+  user_id: string | null;
+}
+
+interface Rule {
+  id: string;
+  name: string;
+  description: string | null;
+  priority: string | null;
 }
 
 interface Case {
@@ -32,6 +44,12 @@ interface Case {
   first_name: string;
   last_name: string;
   type_of_incident: string;
+  contact_email: string;
+  signer_email: string | null;
+  reviewer_email: string | null;
+  rule_applied: string | null;
+  user_id: string | null;
+  rule?: Rule;
 }
 
 interface ImportantDate {
@@ -42,6 +60,7 @@ interface ImportantDate {
   type: 'hearing' | 'deadline' | 'other';
   case_id: string;
   description?: string;
+  rule_id?: string;
 }
 
 interface Document {
@@ -62,38 +81,119 @@ interface CalendarEvent {
   url?: string;
 }
 
+interface User {
+  id: string;
+  full_name: string;
+  email: string;
+  role: 'Reviewer' | 'Signer' | 'Approver' | 'Admin';
+}
+
 const Dashboard = () => {
   const [workflowSteps, setWorkflowSteps] = useState<CaseWorkflowStep[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
+  const [rules, setRules] = useState<Record<string, Rule>>({});
+  const [users, setUsers] = useState<User[]>([]);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
 
   useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        setLoading(true);
+
+        // Fetch all users from Supabase
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, full_name, email, role');
+        if (usersError) throw usersError;
+
+        const fetchedUsers = usersData || [];
+        setUsers(fetchedUsers);
+
+        // Set initial user only if not already set
+        if (!user && fetchedUsers.length > 0) {
+          const initialUser = fetchedUsers.find(u => u.role === "Reviewer") || fetchedUsers[0];
+          setUser(initialUser);
+        }
+
+        if (fetchedUsers.length === 0) {
+          setError("No users found in the system");
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error('Error fetching initial data:', err);
+        setError('Failed to load initial data');
+        setLoading(false);
+      }
+    };
+
+    fetchInitialData();
+  }, []); // Empty dependency array to run only on mount
+
+  useEffect(() => {
+    if (!user) return; // Skip if no user is selected
+
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        
-        const { data: userCases, error: casesError } = await supabase
+
+        // Fetch cases based on user role
+        let casesQuery = supabase
           .from('cases')
           .select('*')
-          .order('created_at', { ascending: false })
-          .limit(5);
+          .order('created_at', { ascending: false });
 
+        if (user.role !== 'Admin') {
+          casesQuery = casesQuery.or(
+            `signer_email.eq.${user.email},reviewer_email.eq.${user.email},user_id.eq.${user.id}`
+          );
+        }
+
+        const { data: userCases, error: casesError } = await casesQuery.limit(10);
         if (casesError) throw casesError;
-        setCases(userCases || []);
 
+        // Fetch rules for cases with rule_applied
+        const ruleIds = userCases?.filter(c => c.rule_applied).map(c => c.rule_applied) || [];
+        let rulesData: Rule[] = [];
+        if (ruleIds.length > 0) {
+          const { data: rulesResult, error: rulesError } = await supabase
+            .from('rules')
+            .select('id, name, description, priority')
+            .in('id', ruleIds);
+          if (rulesError) throw rulesError;
+          rulesData = rulesResult || [];
+        }
+
+        // Map rules to a lookup object
+        const rulesMap = rulesData.reduce((acc, rule) => ({
+          ...acc,
+          [rule.id]: rule
+        }), {} as Record<string, Rule>);
+
+        setRules(rulesMap);
+
+        // Attach rule data to cases
+        const casesWithRules = userCases?.map(caseItem => ({
+          ...caseItem,
+          rule: caseItem.rule_applied ? rulesMap[caseItem.rule_applied] : undefined
+        })) || [];
+        setCases(casesWithRules);
+
+        // Fetch workflow steps
         const caseIds = userCases?.map(c => c.id) || [];
         if (caseIds.length > 0) {
           const { data: steps, error: stepsError } = await supabase
             .from('case_workflow_steps')
             .select('*')
-            .in('case_id', caseIds);
+            .in('case_id', caseIds)
+            .order('step_order', { ascending: true });
 
           if (stepsError) throw stepsError;
           setWorkflowSteps(steps || []);
         }
-
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
         setError('Failed to load dashboard data');
@@ -103,13 +203,11 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [user]); // Run when user changes
 
-  // Secure PDF download handler
   const downloadPdf = async (pdfData: string, fileName: string, docId: string) => {
     setDownloading(docId);
     try {
-      // Case 1: Direct URL
       if (pdfData.startsWith('http')) {
         const secureUrl = window.location.protocol === 'https:' && pdfData.startsWith('http:')
           ? pdfData.replace('http:', 'https:')
@@ -126,7 +224,6 @@ const Dashboard = () => {
         return;
       }
 
-      // Case 2: Base64 data
       if (pdfData.startsWith('data:application/pdf;base64,') || isValidBase64(pdfData)) {
         const base64Data = pdfData.startsWith('data:') ? pdfData.split(',')[1] : pdfData;
         const byteCharacters = atob(base64Data);
@@ -180,7 +277,6 @@ const Dashboard = () => {
     }
   };
 
-  // Secure calendar event download
   const addToCalendar = (event: CalendarEvent) => {
     try {
       const formatDate = (date: Date) => {
@@ -209,7 +305,6 @@ const Dashboard = () => {
       ].filter(Boolean).join('\r\n');
 
       if (window.isSecureContext) {
-        // Secure context - download directly
         const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         
@@ -223,7 +318,6 @@ const Dashboard = () => {
         
         setTimeout(() => URL.revokeObjectURL(url), 100);
       } else {
-        // Insecure context (development) - open in new tab
         const file = new File([icsContent], `${event.title}.ics`, { 
           type: 'text/calendar;charset=utf-8' 
         });
@@ -237,54 +331,72 @@ const Dashboard = () => {
     }
   };
 
-  const calculateCaseProgress = () => {
-    if (!cases.length || !workflowSteps.length) return { percent: 0, currentStep: 0, totalSteps: 0, currentStepName: 'Not Started' };
-    
-    const activeCase = cases[0];
+  const calculateCaseProgress = (caseId: string) => {
     const caseSteps = workflowSteps
-      .filter(step => step.case_id === activeCase.id)
+      .filter(step => step.case_id === caseId)
       .sort((a, b) => a.step_order - b.step_order);
     
     const totalSteps = caseSteps.length;
     const completedSteps = caseSteps.filter(step => step.action_status === 'Completed').length;
     
     return {
-      percent: Math.round((completedSteps / totalSteps) * 100),
+      percent: totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0,
       currentStep: completedSteps + 1,
       totalSteps,
-      currentStepName: caseSteps[completedSteps]?.step_name || "Completed"
+      currentStepName: caseSteps[completedSteps]?.step_name || "Not Started"
     };
   };
 
   const getImportantDates = (): ImportantDate[] => {
-    if (!cases.length) return [];
-    
+    if (!cases.length || !user) return [];
+
+    // Filter cases based on user role
+    const filteredCases = cases.filter(caseItem => {
+      if (user.role === 'Admin') return true;
+      if (user.role === 'Signer' && caseItem.signer_email === user.email) return true;
+      if (user.role === 'Reviewer' && caseItem.reviewer_email === user.email) return true;
+      if (user.role === 'Approver' && workflowSteps.some(step => step.case_id === caseItem.id && step.user_id === user.id)) return true;
+      return caseItem.user_id === user.id;
+    });
+
     const dates: ImportantDate[] = [];
 
-    cases.forEach(caseItem => {
+    filteredCases.forEach(caseItem => {
+      // Incident Date
       dates.push({
         id: `${caseItem.id}-incident`,
-        title: `Incident Date - ${caseItem.first_name} ${caseItem.last_name}`,
+        title: `Incident: ${caseItem.case_number}`,
         date: new Date(caseItem.date_of_incident),
         type: 'other',
         case_id: caseItem.id,
-        description: `Type: ${caseItem.type_of_incident}`
+        description: `Type: ${caseItem.type_of_incident}, ${caseItem.first_name} ${caseItem.last_name}`
       });
 
+      // Workflow step deadlines
       const caseSteps = workflowSteps
-        .filter(step => step.case_id === caseItem.id)
-        .filter(step => step.estimated_duration);
-        
+        .filter(step => step.case_id === caseItem.id && step.estimated_duration && step.is_required)
+        .sort((a, b) => a.step_order - b.step_order)
+        .filter(step => {
+          if (user.role === 'Signer' && caseItem.signer_email !== user.email) return false;
+          if (user.role === 'Reviewer' && caseItem.reviewer_email !== user.email) return false;
+          if (user.role === 'Approver' && step.user_id !== user.id) return false;
+          if (user.role === 'Reviewer' && step.action_type !== 'Review') return false;
+          if (user.role === 'Signer' && step.action_type !== 'Sign') return false;
+          if (user.role === 'Approver' && step.action_type !== 'Approve') return false;
+          return true;
+        });
+
       caseSteps.forEach(step => {
         const estimatedDays = parseInt(step.estimated_duration || '0');
         if (!isNaN(estimatedDays)) {
           dates.push({
             id: step.id,
-            title: `Deadline: ${step.step_name}`,
+            title: `${step.step_name} (${caseItem.case_number})`,
             date: addDays(new Date(caseItem.created_at), estimatedDays),
             type: 'deadline',
             case_id: caseItem.id,
-            description: step.description || undefined
+            description: step.description || `Action: ${step.action_type || 'N/A'}`,
+            rule_id: caseItem.rule_applied
           });
         }
       });
@@ -294,7 +406,7 @@ const Dashboard = () => {
     return dates
       .filter(date => isAfter(date.date, now))
       .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .slice(0, 5);
+      .slice(0, 8);
   };
 
   const getRecentDocuments = (): Document[] => {
@@ -304,18 +416,52 @@ const Dashboard = () => {
         id: caseItem.id,
         name: `Case ${caseItem.case_number} - ${caseItem.first_name} ${caseItem.last_name}`,
         modified_at: caseItem.created_at,
-        status: caseItem.status === 'New' ? 'pending' : 
-               caseItem.status === 'In Progress' ? 'in progress' : 'completed',
+        status: caseItem.status === 'Draft' ? 'pending' : 
+                caseItem.status === 'In Progress' ? 'in progress' : 'completed',
         url: caseItem.pdf_url as string,
         case_id: caseItem.id
       }))
       .sort((a, b) => new Date(b.modified_at).getTime() - new Date(a.modified_at).getTime())
-      .slice(0, 3);
+      .slice(0, 5);
   };
 
-  const progressData = calculateCaseProgress();
+  const getUserSpecificMetrics = () => {
+    if (!user) return { assignedCases: 0, pendingActions: 0, urgentCases: 0 };
+
+    const assignedCases = cases.filter(c => 
+      c.signer_email === user.email || 
+      c.reviewer_email === user.email || 
+      c.user_id === user.id
+    ).length;
+
+    const pendingActions = workflowSteps.filter(s => 
+      s.action_status === 'Pending' && 
+      s.user_id === user.id &&
+      s.is_required
+    ).length;
+
+    const urgentCases = cases.filter(c => {
+      const steps = workflowSteps.filter(s => s.case_id === c.id);
+      return steps.some(s => 
+        s.estimated_duration && 
+        isAfter(new Date(), addDays(new Date(c.created_at), parseInt(s.estimated_duration)))
+      );
+    }).length;
+
+    return { assignedCases, pendingActions, urgentCases };
+  };
+
+  const progressData = cases.length > 0 ? calculateCaseProgress(cases[0].id) : { percent: 0, currentStep: 0, totalSteps: 0, currentStepName: 'Not Started' };
   const importantDates = getImportantDates();
   const recentDocuments = getRecentDocuments();
+  const userMetrics = getUserSpecificMetrics();
+
+  const handleUserChange = (userId: string) => {
+    const selectedUser = users.find(u => u.id === userId);
+    if (selectedUser && selectedUser.id !== user?.id) {
+      setUser(selectedUser);
+    }
+  };
 
   if (loading) {
     return (
@@ -340,11 +486,25 @@ const Dashboard = () => {
   return (
     <Layout>
       <div className="space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold text-primary mb-2">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Welcome back! Here's what's happening with your cases.
-          </p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-primary mb-2">Dashboard</h1>
+            <p className="text-muted-foreground">
+              Welcome back{user ? `, ${user.full_name}` : ''}! Here's your case management overview.
+            </p>
+          </div>
+          <Select onValueChange={handleUserChange} defaultValue={user?.id} disabled={users.length === 0}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Select User" />
+            </SelectTrigger>
+            <SelectContent>
+              {users.map((u) => (
+                <SelectItem key={u.id} value={u.id}>
+                  {u.full_name} ({u.role})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -357,37 +517,25 @@ const Dashboard = () => {
             trend={progressData.percent > 50 ? "up" : "down"}
           />
           <StatsCard
-            title="Upcoming Dates"
-            value={importantDates.length.toString()}
-            subtitle={
-              importantDates.length > 0 
-                ? `Next: ${importantDates[0].title} in ${formatDistanceToNow(importantDates[0].date, { addSuffix: true })}`
-                : "No upcoming dates"
-            }
-            icon={<Calendar className="w-6 h-6" />}
-            iconBg="bg-judicial-accent"
+            title="Assigned Cases"
+            value={userMetrics.assignedCases.toString()}
+            subtitle={user ? `${user.role} assigned cases` : 'No assignments'}
+            icon={<User className="w-6 h-6" />}
+            iconBg="bg-primary"
           />
           <StatsCard
-            title="Documents"
-            value={recentDocuments.length.toString()}
-            subtitle={
-              recentDocuments.filter(d => d.status === 'pending').length > 0
-                ? `${recentDocuments.filter(d => d.status === 'pending').length} pending completion`
-                : cases.length > 0 ? "All documents complete" : "No documents"
-            }
-            icon={<FileText className="w-6 h-6" />}
+            title="Pending Actions"
+            value={userMetrics.pendingActions.toString()}
+            subtitle={userMetrics.pendingActions > 0 ? `${userMetrics.pendingActions} actions require your attention` : 'No pending actions'}
+            icon={<AlertCircle className="w-6 h-6" />}
             iconBg="bg-warning"
           />
           <StatsCard
-            title="Active Cases"
-            value={cases.length.toString()}
-            subtitle={
-              cases.filter(c => c.status === 'New').length > 0
-                ? `${cases.filter(c => c.status === 'New').length} new cases`
-                : cases.length > 0 ? "No new cases" : "No cases"
-            }
+            title="Urgent Cases"
+            value={userMetrics.urgentCases.toString()}
+            subtitle={userMetrics.urgentCases > 0 ? 'Cases past due dates' : 'No urgent cases'}
             icon={<MessageSquare className="w-6 h-6" />}
-            iconBg="bg-primary"
+            iconBg="bg-destructive"
           />
         </div>
 
@@ -396,7 +544,7 @@ const Dashboard = () => {
             <CardHeader>
               <CardTitle className="flex items-center">
                 <Calendar className="w-5 h-5 mr-2" />
-                Upcoming Important Dates
+                Upcoming Deadlines & Events
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -406,20 +554,20 @@ const Dashboard = () => {
                     <div>
                       <div className="flex items-center space-x-2 mb-1">
                         <span className="font-medium">{date.title}</span>
-                        {date.type === 'hearing' && (
-                          <Badge variant="destructive">
-                            {formatDistanceToNow(date.date, { addSuffix: true })}
-                          </Badge>
-                        )}
+                        <Badge variant={date.type === 'deadline' ? 'destructive' : 'secondary'}>
+                          {formatDistanceToNow(date.date, { addSuffix: true })}
+                        </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {format(date.date, 'MMMM d, yyyy \'at\' h:mm a')}
                       </p>
-                      {date.location && (
-                        <p className="text-sm text-muted-foreground">{date.location}</p>
-                      )}
                       {date.description && (
                         <p className="text-sm text-muted-foreground mt-1">{date.description}</p>
+                      )}
+                      {date.rule_id && rules[date.rule_id] && (
+                        <p className="text-sm text-muted-foreground">
+                          Rule: {rules[date.rule_id].name}
+                        </p>
                       )}
                     </div>
                     <Button 
@@ -430,7 +578,7 @@ const Dashboard = () => {
                           title: date.title,
                           start: date.date,
                           end: addHours(date.date, 1),
-                          description: date.description || `Related to case ${cases.find(c => c.id === date.case_id)?.case_number}`,
+                          description: date.description || `Case ${cases.find(c => c.id === date.case_id)?.case_number}`,
                           location: date.location
                         };
                         addToCalendar(calendarEvent);
@@ -443,7 +591,7 @@ const Dashboard = () => {
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <AlertCircle className="mx-auto h-8 w-8 mb-2" />
-                  <p>No upcoming important dates</p>
+                  <p>No upcoming deadlines or events</p>
                 </div>
               )}
             </CardContent>
@@ -466,6 +614,9 @@ const Dashboard = () => {
                         <p className="font-medium">{doc.name}</p>
                         <p className="text-sm text-muted-foreground">
                           {format(new Date(doc.modified_at), 'MMM d, yyyy')}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Status: {doc.status}
                         </p>
                       </div>
                     </div>
