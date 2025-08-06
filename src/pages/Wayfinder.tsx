@@ -428,12 +428,13 @@ const Wayfinder = () => {
               <RefreshCw className="w-4 h-4" />
               <span>Refresh Status</span>
             </Button>
+            {selectedCaseNumber && (
             <Button
               onClick={() => navigate("/step1")}
               className="flex items-center space-x-2 bg-green-600 hover:bg-green-700"
             >
               <span>Start New Case</span>
-            </Button>
+            </Button>)}
           </div>
 
           <div className="flex justify-center space-x-8 mt-6">
