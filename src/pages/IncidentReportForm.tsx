@@ -75,7 +75,6 @@ const IncidentReportForm: React.FC = () => {
             rule_applied: data.rule_applied || "",
           });
 
-          // Fetch documents (assuming stored in action_metadata or a case_documents table)
           const { data: stepsData, error: stepsError } = await supabase
             .from("case_workflow_steps")
             .select("action_metadata")
@@ -85,7 +84,6 @@ const IncidentReportForm: React.FC = () => {
 
           if (stepsError) throw stepsError;
 
-          // Assuming documents are stored as URLs in action_metadata
           const documentUrls = stepsData?.action_metadata?.document_urls || [];
           const fetchedDocuments = await Promise.all(
             documentUrls.map(async (url: string, index: number) => {
@@ -138,6 +136,94 @@ const IncidentReportForm: React.FC = () => {
 
   const generateCaseNumber = () =>
     `SF-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+  const getUserIdByEmail = async (email: string): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id")
+        .eq("email", email)
+        .single();
+
+      if (error || !data) {
+        console.warn(`User with email ${email} not found`);
+        return null;
+      }
+
+      return data.id;
+    } catch (error) {
+      console.error(`Error fetching user ID for email ${email}:`, error);
+      return null;
+    }
+  };
+
+  const getRulePriority = async (caseId: string): Promise<string> => {
+    try {
+      const { data: caseData, error: caseError } = await supabase
+        .from("cases")
+        .select("rule_applied")
+        .eq("id", caseId)
+        .single();
+
+      if (caseError || !caseData) {
+        console.warn("Case not found or no rule applied, defaulting to medium priority");
+        return "medium";
+      }
+
+      if (!caseData.rule_applied) {
+        console.warn("No rule applied for case, defaulting to medium priority");
+        return "medium";
+      }
+
+      const { data: ruleData, error: ruleError } = await supabase
+        .from("rules")
+        .select("priority")
+        .eq("id", caseData.rule_applied)
+        .single();
+
+      if (ruleError || !ruleData) {
+        console.warn("Rule not found, defaulting to medium priority");
+        return "medium";
+      }
+
+      return ruleData.priority || "medium";
+    } catch (error) {
+      console.error("Error fetching rule priority:", error);
+      return "medium";
+    }
+  };
+
+  const createNotification = async (
+    email: string,
+    caseId: string | null,
+    type: string,
+    title: string,
+    message: string
+  ) => {
+    const userId = await getUserIdByEmail(email);
+    if (!userId) {
+      console.warn(`No user found for email ${email}, skipping notification`);
+      return;
+    }
+
+    const priority = caseId ? await getRulePriority(caseId) : "medium";
+
+    const { error } = await supabase
+      .from("notifications")
+      .insert({
+        user_id: userId,
+        case_id: caseId,
+        type,
+        title,
+        message,
+        priority,
+        is_read: false,
+      });
+
+    if (error) {
+      console.error("Failed to create notification:", error);
+    }
+  };
 
   const initializeWorkflowSteps = async (
     caseId: string,
@@ -324,8 +410,16 @@ const IncidentReportForm: React.FC = () => {
         localStorage.setItem("case_number", generatedCaseNumber);
 
         await initializeWorkflowSteps(caseIdToUse, updatedCase.reviewer_email, updatedCase.signer_email);
+
+        // Create notification for case creation for contact_email user
+        await createNotification(
+          updatedCase.contact_email,
+          caseIdToUse,
+          "document",
+          "Case Created",
+          `Your case ${generatedCaseNumber} has been created successfully.`
+        );
       } else {
-        // Update existing case
         const { error: updateError } = await supabase
           .from("cases")
           .update({
@@ -342,6 +436,15 @@ const IncidentReportForm: React.FC = () => {
           .eq("id", caseIdToUse);
 
         if (updateError) throw updateError;
+
+        // Create notification for case update for contact_email user
+        await createNotification(
+          form.contact_email,
+          caseIdToUse,
+          "document",
+          "Case Updated",
+          `Your case ${form.case_number} has been updated successfully.`
+        );
       }
 
       setCurrentStep(2);
@@ -358,18 +461,6 @@ const IncidentReportForm: React.FC = () => {
     try {
       if (!currentCaseId) throw new Error("Case ID is missing");
 
-      // Upload documents to Supabase storage (or update action_metadata)
-      // const documentUrls: string[] = [];
-      // for (const file of documents) {
-      //   const { data, error } = await supabase.storage
-      //     .from("case-documents")
-      //     .upload(`${currentCaseId}/${file.name}`, file);
-
-      //   if (error) throw error;
-      //   const publicUrl = supabase.storage.from("case-documents").getPublicUrl(data.path).data.publicUrl;
-      //   documentUrls.push(publicUrl);
-      // }
-      // Convert documents to base64 data URLs and store in action_metadata
       const documentUrls: string[] = [];
       for (const file of documents) {
         const reader = new FileReader();
@@ -381,7 +472,6 @@ const IncidentReportForm: React.FC = () => {
         documentUrls.push(dataUrl);
       }
 
-      // Update Document Preparation step with document URLs
       await supabase
         .from("case_workflow_steps")
         .update({
@@ -390,7 +480,6 @@ const IncidentReportForm: React.FC = () => {
         .eq("case_id", currentCaseId)
         .eq("step_name", "Document Preparation");
 
-      // Update case with PDF and status
       const { error: updateError } = await supabase
         .from("cases")
         .update({ pdf_url: pdfBase64, status: "In Progress" })
@@ -398,22 +487,45 @@ const IncidentReportForm: React.FC = () => {
 
       if (updateError) throw updateError;
 
-      // Fetch case details
       const { data: caseData, error: caseError } = await supabase
         .from("cases")
-        .select("case_number, reviewer_email, signer_email, contact_phone, type_of_incident, contact_email")
+        .select("case_number, reviewer_email, signer_email, contact_phone, type_of_incident, contact_email, rule_applied")
         .eq("id", currentCaseId)
         .single();
 
       if (caseError || !caseData) throw new Error("Failed to fetch case details");
 
-      const { case_number, reviewer_email, signer_email, contact_phone, type_of_incident, contact_email } = caseData;
+      const { case_number, contact_phone, type_of_incident, contact_email } = caseData;
 
-      // Fetch reviewer and signer user records
+      // Fetch reviewer_email and signer_email from rule match if rule_applied exists
+      let reviewerEmail = caseData.reviewer_email;
+      let signerEmail = caseData.signer_email;
+      if (caseData.rule_applied) {
+        const { data: rules, error: rulesError } = await supabase
+          .from("rules")
+          .select("reviewer_email, signer_email")
+          .eq("id", caseData.rule_applied)
+          .single();
+
+        if (rulesError || !rules) {
+          console.warn("Rule not found, using case reviewer_email and signer_email");
+        } else {
+          reviewerEmail = rules.reviewer_email || caseData.reviewer_email || "defaultreviewer@yopmail.com";
+          signerEmail = rules.signer_email || caseData.signer_email || caseData.contact_email;
+        }
+      }
+
+      const reviewerUserId = await getUserIdByEmail(reviewerEmail);
+      const signerUserId = await getUserIdByEmail(signerEmail);
+
+      if (!reviewerUserId || !signerUserId) {
+        throw new Error("Reviewer or signer user not found");
+      }
+
       const { data: reviewerUser, error: reviewerError } = await supabase
         .from("users")
         .select("full_name, email, role, id")
-        .eq("email", reviewer_email)
+        .eq("id", reviewerUserId)
         .single();
 
       if (reviewerError) throw new Error("Reviewer not found");
@@ -421,7 +533,7 @@ const IncidentReportForm: React.FC = () => {
       const { data: signerUser, error: signerError } = await supabase
         .from("users")
         .select("full_name, email, role, id")
-        .eq("email", signer_email)
+        .eq("id", signerUserId)
         .single();
 
       if (signerError) throw new Error("Signer not found");
@@ -515,12 +627,11 @@ const IncidentReportForm: React.FC = () => {
         .update({ signcare_doc_id: signcareDocId })
         .eq("id", currentCaseId);
 
-      // Update workflow steps with signcare_doc_id
       await supabase
         .from("case_workflow_steps")
         .update({
           action_metadata: {
-            reviewer_email,
+            reviewer_email: reviewerEmail,
             signcare_doc_id: signcareDocId,
           },
           is_active: true,
@@ -533,14 +644,13 @@ const IncidentReportForm: React.FC = () => {
         .from("case_workflow_steps")
         .update({
           action_metadata: {
-            signer_email,
+            signer_email: signerEmail,
             signcare_doc_id: signcareDocId,
           },
         })
         .eq("case_id", currentCaseId)
         .eq("step_name", "Sign Process");
 
-      // Update Document Preparation step to Completed
       await supabase
         .from("case_workflow_steps")
         .update({
@@ -551,161 +661,21 @@ const IncidentReportForm: React.FC = () => {
         .eq("case_id", currentCaseId)
         .eq("step_name", "Document Preparation");
 
-      // Fetch initial status from SignCare
-      const statusResponse = await axios.post(
-        `${import.meta.env.VITE_API_SC_BASE}/esign/status`,
-        {
-          documentId: signcareDocId,
-          documentReferenceId: case_number,
-        },
-        {
-          headers: {
-            "X-API-KEY": `${import.meta.env.VITE_API_SC_X_KEY}`,
-            "X-API-APP-ID": `${import.meta.env.VITE_API_SC_X_ID}`,
-          },
-        }
+      // Create notifications for document submission
+      await createNotification(
+        contact_email,
+        currentCaseId,
+        "document",
+        "Documents Submitted",
+        `Your documents for case ${case_number} have been submitted for review.`
       );
-
-      if (statusResponse.status === 200 && statusResponse.data.success) {
-        const { documentStatus, signerInfo } = statusResponse.data.data;
-
-        const reviewer = signerInfo.find((s: any) => s.signerRefId === reviewerUser.id);
-        const signer = signerInfo.find((s: any) => s.signerRefId === signerUser.id);
-
-        const mapSignerStatus = (status: string): string => {
-          switch (status) {
-            case "Pending":
-              return "In Progress";
-            case "Approved":
-              return "Reviewed";
-            case "Rejected":
-              return "Rejected";
-            case "Signed":
-              return "Signed";
-            default:
-              return "In Progress";
-          }
-        };
-
-        const reviewStep = await supabase
-          .from("case_workflow_steps")
-          .select("id, action_metadata")
-          .match({ case_id: currentCaseId, step_name: "Review Process" })
-          .single();
-
-        if (reviewStep.data && reviewer) {
-          const newStatus = mapSignerStatus(reviewer.signerStatus);
-          await supabase
-            .from("case_workflow_steps")
-            .update({
-              action_status: newStatus,
-              action_timestamp: new Date().toISOString(),
-              failure_reason:
-                newStatus === "Rejected"
-                  ? reviewer.rejectReason || "Reviewer rejected the document"
-                  : null,
-              action_metadata: {
-                ...reviewStep.data.action_metadata,
-                signer_id: reviewer.signerId,
-                invitation_expiry: reviewer.invitationExpireTimeStamp,
-                signcare_doc_id: signcareDocId,
-              },
-            })
-            .eq("id", reviewStep.data.id);
-
-          if (newStatus === "Reviewed") {
-            const signStep = await supabase
-              .from("case_workflow_steps")
-              .select("id")
-              .match({ case_id: currentCaseId, step_name: "Sign Process" })
-              .single();
-            if (signStep.data) {
-              await supabase
-                .from("case_workflow_steps")
-                .update({
-                  is_active: true,
-                })
-                .eq("id", signStep.data.id);
-            }
-          }
-        }
-
-        const signStep = await supabase
-          .from("case_workflow_steps")
-          .select("id, action_metadata")
-          .match({ case_id: currentCaseId, step_name: "Sign Process" })
-          .single();
-
-        if (signStep.data && signer) {
-          const newStatus = mapSignerStatus(signer.signerStatus);
-          await supabase
-            .from("case_workflow_steps")
-            .update({
-              action_status: newStatus,
-              action_timestamp: new Date().toISOString(),
-              failure_reason:
-                newStatus === "Rejected"
-                  ? signer.rejectReason || "Signer rejected the document"
-                  : null,
-              action_metadata: {
-                ...signStep.data.action_metadata,
-                signer_id: signer.signerId,
-                invitation_expiry: signer.invitationExpireTimeStamp,
-                signcare_doc_id: signcareDocId,
-              },
-            })
-            .eq("id", signStep.data.id);
-
-          if (newStatus === "Signed") {
-            const courtFilingStep = await supabase
-              .from("case_workflow_steps")
-              .select("id")
-              .match({ case_id: currentCaseId, step_name: "Court Filing" })
-              .single();
-            if (courtFilingStep.data) {
-              await supabase
-                .from("case_workflow_steps")
-                .update({
-                  is_active: true,
-                  action_status: "In Progress",
-                  action_timestamp: new Date().toISOString(),
-                })
-                .eq("id", courtFilingStep.data.id);
-            }
-          }
-        }
-
-        const courtFilingStep = await supabase
-          .from("case_workflow_steps")
-          .select("id")
-          .match({ case_id: currentCaseId, step_name: "Court Filing" })
-          .single();
-
-        if (courtFilingStep.data && documentStatus === "Signed") {
-          await supabase
-            .from("case_workflow_steps")
-            .update({
-              is_active: true,
-              action_status: "Completed",
-              action_timestamp: new Date().toISOString(),
-            })
-            .eq("id", courtFilingStep.data.id);
-        }
-
-        await supabase
-          .from("cases")
-          .update({
-            status:
-              documentStatus === "Signed"
-                ? "Completed"
-                : documentStatus === "Rejected"
-                ? "Rejected"
-                : documentStatus === "Pending"
-                ? "In Progress"
-                : "Draft",
-          })
-          .eq("id", currentCaseId);
-      }
+      await createNotification(
+        reviewerEmail,
+        currentCaseId,
+        "document",
+        "Document Submitted for Review",
+        `Documents for case ${case_number} have been submitted for your review.`
+      );
 
       await updateWorkflowStatus(currentCaseId, case_number);
 

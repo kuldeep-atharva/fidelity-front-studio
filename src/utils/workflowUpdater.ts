@@ -1,18 +1,126 @@
 import axios from "axios";
 import { supabase } from "@/utils/supabaseClient";
 
+const getUserIdByEmail = async (email: string): Promise<string | null> => {
+  try {
+    const { data, error } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .single();
+
+    if (error || !data) {
+      console.warn(`User with email ${email} not found`);
+      return null;
+    }
+
+    return data.id;
+  } catch (error) {
+    console.error(`Error fetching user ID for email ${email}:`, error);
+    return null;
+  }
+};
+
+const getRulePriority = async (caseId: string): Promise<string> => {
+  try {
+    const { data: caseData, error: caseError } = await supabase
+      .from("cases")
+      .select("rule_applied")
+      .eq("id", caseId)
+      .single();
+
+    if (caseError || !caseData) {
+      console.warn("Case not found or no rule applied, defaulting to medium priority");
+      return "medium";
+    }
+
+    if (!caseData.rule_applied) {
+      console.warn("No rule applied for case, defaulting to medium priority");
+      return "medium";
+    }
+
+    const { data: ruleData, error: ruleError } = await supabase
+      .from("rules")
+      .select("priority")
+      .eq("id", caseData.rule_applied)
+      .single();
+
+    if (ruleError || !ruleData) {
+      console.warn("Rule not found, defaulting to medium priority");
+      return "medium";
+    }
+
+    return ruleData.priority || "medium";
+  } catch (error) {
+    console.error("Error fetching rule priority:", error);
+    return "medium";
+  }
+};
+
+const createNotification = async (
+  email: string,
+  caseId: string,
+  type: string,
+  title: string,
+  message: string
+) => {
+  const userId = await getUserIdByEmail(email);
+  if (!userId) {
+    console.warn(`No user found for email ${email}, skipping notification`);
+    return;
+  }
+
+  // Check for existing notification to prevent duplicates
+  const { data: existingNotification, error: checkError } = await supabase
+    .from("notifications")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("case_id", caseId)
+    .eq("type", type)
+    .eq("title", title)
+    .single();
+
+  if (checkError && checkError.code !== "PGRST116") { // PGRST116 means no rows found
+    console.error("Error checking for existing notification:", checkError);
+    return;
+  }
+
+  if (existingNotification) {
+    console.log(`Notification with title "${title}" already exists for user ${email}, skipping`);
+    return;
+  }
+
+  const priority = await getRulePriority(caseId);
+
+  const { error } = await supabase
+    .from("notifications")
+    .insert({
+      user_id: userId,
+      case_id: caseId,
+      type,
+      title,
+      message,
+      priority,
+      is_read: false,
+    });
+
+  if (error) {
+    console.error("Failed to create notification:", error);
+  }
+};
+
 export const updateWorkflowStatus = async (caseId: string, caseNumber: string) => {
   try {
     // Fetch case details
     const { data: caseData, error: caseError } = await supabase
       .from("cases")
-      .select("reviewer_email, signer_email, id, signcare_doc_id")
+      .select("reviewer_email, signer_email, contact_email, id, signcare_doc_id")
       .eq("id", caseId)
       .single();
 
     if (caseError || !caseData) throw new Error("Failed to fetch case details");
 
-    const { reviewer_email: reviewerEmail, signer_email: signerEmail, signcare_doc_id: signcareDocId } = caseData;
+    const { reviewer_email: reviewerEmail, signer_email: signerEmail, contact_email: contactEmail, signcare_doc_id: signcareDocId } = caseData;
 
     if (!reviewerEmail || !signerEmail || !signcareDocId) throw new Error("Required case information missing");
 
@@ -111,7 +219,7 @@ export const updateWorkflowStatus = async (caseId: string, caseNumber: string) =
               signer_id: reviewer.signerId,
               invitation_expiry: reviewer.invitationExpireTimeStamp,
             },
-            is_active: newStatus === "Reviewed" ? false : reviewStep.is_active, // Deactivate when Reviewed
+            is_active: newStatus === "Reviewed" ? false : reviewStep.is_active,
           })
           .eq("id", reviewStep.id);
 
@@ -121,6 +229,24 @@ export const updateWorkflowStatus = async (caseId: string, caseNumber: string) =
             : newStatus === "Rejected"
             ? "Rejected by Reviewer"
             : "In Progress";
+
+        // Send notifications when status changes to Reviewed
+        if (newStatus === "Reviewed") {
+          await createNotification(
+            signerEmail,
+            caseId,
+            "document",
+            "Documents Ready for Signing",
+            `Documents for case ${caseNumber} are ready for your signature.`
+          );
+          await createNotification(
+            contactEmail,
+            caseId,
+            "document",
+            "Documents Reviewed",
+            `Your documents for case ${caseNumber} have been reviewed.`
+          );
+        }
 
         // Activate Sign Process if Review is Reviewed
         if (newStatus === "Reviewed" && signStep) {
@@ -154,7 +280,7 @@ export const updateWorkflowStatus = async (caseId: string, caseNumber: string) =
               signer_id: signer.signerId,
               invitation_expiry: signer.invitationExpireTimeStamp,
             },
-            is_active: newStatus === "Signed" ? false : signStep.is_active, // Deactivate when Signed
+            is_active: newStatus === "Signed" ? false : signStep.is_active,
           })
           .eq("id", signStep.id);
 
@@ -164,6 +290,17 @@ export const updateWorkflowStatus = async (caseId: string, caseNumber: string) =
             : newStatus === "Rejected"
             ? "Rejected by Signer"
             : caseStatus;
+
+        // Send notification when status changes to Signed
+        if (newStatus === "Signed") {
+          await createNotification(
+            contactEmail,
+            caseId,
+            "document",
+            "Documents Signed",
+            `Your documents for case ${caseNumber} have been signed.`
+          );
+        }
 
         // Activate Court Filing if Sign Process is Signed
         if (newStatus === "Signed" && courtFilingStep) {
@@ -175,7 +312,7 @@ export const updateWorkflowStatus = async (caseId: string, caseNumber: string) =
               action_timestamp: new Date().toISOString(),
             })
             .eq("id", courtFilingStep.id);
-          caseStatus = "Signed"; // Keep case status as Signed until Court Filing is completed
+          caseStatus = "Signed";
         }
       }
     }
