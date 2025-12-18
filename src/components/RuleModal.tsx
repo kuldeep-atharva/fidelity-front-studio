@@ -122,7 +122,7 @@ export default function RuleModal({ open, onClose, onSuccess, initialRule }: Rul
           </div>
 
           <div>
-            <Label>Description</Label>
+            <Label>Condition</Label>
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
 
